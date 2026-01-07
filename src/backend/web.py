@@ -2,6 +2,8 @@ import platform
 import os
 
 import uvicorn
+import json
+import threading
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +18,7 @@ from context import Context
 from models.interface_types import InterfaceType
 from state import get_settings
 from paths import FastStableDiffusionPaths
+from backend.api.models.review import ReviewRequest, ReviewResponse
 
 app_settings = get_settings()
 app = FastAPI(
@@ -145,18 +148,151 @@ async def list_results():
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Results directory not found")
 
+    # reviews stored in a simple JSON file in the results directory
+    REVIEWS_FILENAME = ".reviews.json"
+    reviews_file = os.path.join(path, REVIEWS_FILENAME)
+
+    _reviews_lock = threading.Lock()
+
+    def _load_reviews():
+        if not os.path.exists(reviews_file):
+            return {}
+        try:
+            with open(reviews_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _save_reviews(data: dict):
+        tmp = reviews_file + ".tmp"
+        with _reviews_lock:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            try:
+                os.replace(tmp, reviews_file)
+            except Exception:
+                pass
+
+    reviews = _load_reviews()
+
     files = []
     for entry in sorted(os.listdir(path), reverse=True):
         full = os.path.join(path, entry)
         if os.path.isfile(full):
             stat = os.stat(full)
+            file_review = reviews.get(entry) if isinstance(reviews, dict) else None
             files.append(
                 {
                     "name": entry,
                     "url": f"/results/{entry}",
                     "size": stat.st_size,
                     "mtime": stat.st_mtime,
+                    "review": file_review,
                 }
             )
 
     return files
+
+
+
+@app.get(
+    "/api/results/{name}/review",
+    description="Get review metadata for a generated result",
+    summary="Get review metadata",
+)
+async def get_result_review(name: str):
+    path = app_settings.settings.generated_images.path
+    if not path:
+        path = FastStableDiffusionPaths.get_results_path()
+
+    full = os.path.join(path, name)
+    if not os.path.isfile(full):
+        raise HTTPException(status_code=404, detail="Result file not found")
+
+    reviews_file = os.path.join(path, ".reviews.json")
+    try:
+        with open(reviews_file, "r", encoding="utf-8") as f:
+            reviews = json.load(f)
+    except Exception:
+        reviews = {}
+
+    entry = reviews.get(name)
+    if not entry:
+        raise HTTPException(status_code=404, detail="No review metadata for this file")
+
+    return ReviewResponse(name=name, status=entry.get("status"), note=entry.get("note"))
+
+
+@app.post(
+    "/api/results/{name}/review",
+    description="Set review metadata for a generated result",
+    summary="Set review metadata",
+)
+async def set_result_review(name: str, review: ReviewRequest):
+    path = app_settings.settings.generated_images.path
+    if not path:
+        path = FastStableDiffusionPaths.get_results_path()
+
+    full = os.path.join(path, name)
+    if not os.path.isfile(full):
+        raise HTTPException(status_code=404, detail="Result file not found")
+
+    reviews_file = os.path.join(path, ".reviews.json")
+    _reviews_lock = threading.Lock()
+
+    def _load():
+        if not os.path.exists(reviews_file):
+            return {}
+        try:
+            with open(reviews_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _save(data: dict):
+        tmp = reviews_file + ".tmp"
+        with _reviews_lock:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            try:
+                os.replace(tmp, reviews_file)
+            except Exception:
+                pass
+
+    reviews = _load()
+    reviews[name] = {"status": review.status.value, "note": review.note}
+    _save(reviews)
+
+    return ReviewResponse(name=name, status=review.status, note=review.note)
+
+
+@app.delete(
+    "/api/results/{name}/review",
+    description="Delete review metadata for a generated result",
+    summary="Delete review metadata",
+)
+async def delete_result_review(name: str):
+    path = app_settings.settings.generated_images.path
+    if not path:
+        path = FastStableDiffusionPaths.get_results_path()
+
+    full = os.path.join(path, name)
+    if not os.path.isfile(full):
+        raise HTTPException(status_code=404, detail="Result file not found")
+
+    reviews_file = os.path.join(path, ".reviews.json")
+    try:
+        with open(reviews_file, "r", encoding="utf-8") as f:
+            reviews = json.load(f)
+    except Exception:
+        reviews = {}
+
+    if name in reviews:
+        reviews.pop(name)
+        try:
+            with open(reviews_file, "w", encoding="utf-8") as f:
+                json.dump(reviews, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    return {"deleted": True}
