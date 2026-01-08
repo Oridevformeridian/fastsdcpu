@@ -228,9 +228,11 @@ def get_results_review_ui():
                     name = item.get("name")
                     # Use local file path instead of URL to avoid safehttpx validation issues
                     local_path = os.path.join(results_path, name)
+                    print(f"[DEBUG-UI] Image {i}: name={name}, path={local_path}, exists={os.path.exists(local_path)}")
                     mtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(item.get("mtime", 0)))
                     prompt_val = item.get("meta", {}).get("prompt", "")
                     model_val = item.get("meta", {}).get("model", "") or item.get("meta", {}).get("openvino_model", "")
+                    print(f"[DEBUG-UI]   prompt={prompt_val[:50] if prompt_val else 'EMPTY'}, model={model_val}")
                     page_paths.append(local_path)
                     out.extend([local_path, name, mtime, prompt_val, model_val, local_path])
                 else:
