@@ -56,7 +56,11 @@ def _list_results_paths():
     if not os.path.exists(path):
         return []
 
-    entries = [e for e in os.listdir(path) if os.path.isfile(os.path.join(path, e))]
+    entries = [
+        e for e in os.listdir(path) 
+        if os.path.isfile(os.path.join(path, e))
+        and (e.lower().endswith('.jpg') or e.lower().endswith('.png') or e.lower().endswith('.jpeg'))
+    ]
     entries.sort(key=lambda e: os.stat(os.path.join(path, e)).st_mtime, reverse=True)
     return [os.path.join(path, e) for e in entries]
 
