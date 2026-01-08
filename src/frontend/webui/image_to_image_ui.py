@@ -11,7 +11,7 @@ import urllib.request
 import urllib.parse
 import os
 
-API_BASE = os.environ.get("API_URL")  # if not set, operate locally without API
+API_BASE = os.environ.get("API_URL", "http://127.0.0.1:7860")  # default to 7860
 from frontend.webui.errors import show_error
 
 app_settings = get_settings()
