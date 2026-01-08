@@ -424,6 +424,7 @@ def _queue_worker_loop(poll_interval: float = 1.0):
     db_file = os.path.join(path, "queue.db")
     init_queue_db(db_file)
     while True:
+        job = None
         try:
             job = pop_next_job(db_file)
             if not job:
@@ -452,14 +453,18 @@ def _queue_worker_loop(poll_interval: float = 1.0):
             # Check if job was cancelled during generation
             current_job = get_job(db_file, job_id)
             if current_job and current_job.get("status") == "cancelled":
-                continue  # Skip completion, already marked cancelled
+                time.sleep(poll_interval)  # Sleep before next iteration
+                continue
             if images:
                 saved = context.save_images(images, app_settings.settings)
                 complete_job(db_file, job_id, {"saved": saved, "latency": context.latency})
             else:
                 fail_job(db_file, job_id, context.error or "no images generated")
+            # Sleep briefly after processing to prevent tight loop
+            time.sleep(0.1)
         except Exception as e:
             # avoid tight-loop on unexpected errors
+            print(f"Queue worker error: {e}")
             try:
                 if job and job.get("id"):
                     fail_job(db_file, job.get("id"), str(e))
