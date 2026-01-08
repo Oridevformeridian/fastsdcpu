@@ -225,8 +225,13 @@ async def list_results_paged(page: int = 0, size: int = 20):
     if entry and (now - entry["timestamp"] < cache["ttl"]):
         return entry["data"]
 
-    # build listing for this page
-    all_entries = [e for e in os.listdir(path) if os.path.isfile(os.path.join(path, e))]
+    # build listing for this page - only image files, not JSON or DB
+    all_entries = [
+        e for e in os.listdir(path) 
+        if os.path.isfile(os.path.join(path, e)) 
+        and not e.endswith('.json') 
+        and not e.endswith('.db')
+    ]
     all_entries.sort(key=lambda e: os.stat(os.path.join(path, e)).st_mtime, reverse=True)
 
     start = page * size
@@ -243,7 +248,12 @@ async def list_results_paged(page: int = 0, size: int = 20):
         stat = os.stat(full)
         file_review = get_review(db_file, entry_name)
         meta = {}
-        json_path = os.path.join(path, os.path.splitext(entry_name)[0] + ".json")
+        # Strip batch suffix (-1, -2, etc) to find the base UUID json
+        base_name = os.path.splitext(entry_name)[0]
+        # Remove trailing -N pattern (e.g., ca4703a5-...-1 -> ca4703a5-...)
+        import re
+        base_uuid = re.sub(r'-\d+$', '', base_name)
+        json_path = os.path.join(path, base_uuid + ".json")
         if os.path.exists(json_path):
             try:
                 with open(json_path, "r", encoding="utf-8") as f:
