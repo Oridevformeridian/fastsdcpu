@@ -121,12 +121,14 @@ def get_results_review_ui():
             paths = _list_results_paths()
             total = len(paths)
             start = page_index * PAGE_SIZE
+            page_paths = []
             out_values = [page_index]
             # for each slot, compute outputs
             for i in range(PAGE_SIZE):
                 idx = start + i
                 if idx < total:
                     p = paths[idx]
+                    page_paths.append(p)
                     name = os.path.basename(p)
                     stat = os.stat(p)
                     m = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime))
@@ -149,7 +151,7 @@ def get_results_review_ui():
                     out_values.extend([p, name, m, prompt_val, model_val, status_val, note_val, p])
                 else:
                     out_values.extend([None, "", "", "", "", "pending", "", ""]) 
-            return tuple(out_values)
+            return (page_paths, ) + tuple(out_values)
 
         def _prev(page_index: int):
             new_page = max(0, page_index - 1)
@@ -161,14 +163,10 @@ def get_results_review_ui():
             new_page = min(max_page, page_index + 1)
             return _populate_page(new_page)
 
-        # wire pagination controls: outputs are page_state + per-slot component values
-        outputs = [page_state]
+        # wire pagination controls: outputs are files_gallery, page_state + per-slot component values
+        outputs = [files_gallery, page_state]
         for i in range(PAGE_SIZE):
             outputs.extend([image_slots[i], name_slots[i], mtime_slots[i], prompt_slots[i], model_slots[i], status_slots[i], note_slots[i], path_states[i]])
-
         refresh.click(fn=lambda: _populate_page(0), inputs=None, outputs=outputs)
         prev_btn.click(fn=_prev, inputs=[page_state], outputs=outputs)
         next_btn.click(fn=_next, inputs=[page_state], outputs=outputs)
-
-        # initial populate
-        refresh.click(None, None, outputs)
