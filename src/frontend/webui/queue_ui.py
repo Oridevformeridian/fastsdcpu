@@ -46,7 +46,7 @@ def _fmt(ts):
 
 
 def get_queue_ui():
-    with gr.Blocks():
+    with gr.Blocks() as queue_block:
         with gr.Row():
             refresh = gr.Button("Refresh")
             cancel_id = gr.Number(value=None, label="Job ID to cancel", precision=0)
@@ -102,5 +102,8 @@ def get_queue_ui():
         refresh.click(fn=_refresh, inputs=None, outputs=[table, status])
         cancel_btn.click(fn=_cancel, inputs=[cancel_id], outputs=[status])
         details_btn.click(fn=_details, inputs=[details_id], outputs=[status, details_area])
-        # load initially
-        refresh.click(fn=_refresh, inputs=None, outputs=[table, status])
+        
+        # Auto-refresh on tab load
+        queue_block.load(fn=_refresh, inputs=None, outputs=[table, status])
+    
+    return queue_block

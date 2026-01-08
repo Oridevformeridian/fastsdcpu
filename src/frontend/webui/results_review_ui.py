@@ -64,7 +64,7 @@ def _list_results_paths():
 def get_results_review_ui():
     PAGE_SIZE = 6
 
-    with gr.Blocks():
+    with gr.Blocks() as results_block:
         with gr.Row():
             refresh = gr.Button("Refresh")
             prev_btn = gr.Button("Prev")
@@ -228,3 +228,8 @@ def get_results_review_ui():
         refresh.click(fn=lambda: _populate_page(0), inputs=None, outputs=outputs)
         prev_btn.click(fn=_prev, inputs=[page_state], outputs=outputs)
         next_btn.click(fn=_next, inputs=[page_state], outputs=outputs)
+        
+        # Auto-refresh on tab load
+        results_block.load(fn=lambda: _populate_page(0), inputs=None, outputs=outputs)
+    
+    return results_block
