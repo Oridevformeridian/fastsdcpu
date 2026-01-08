@@ -226,12 +226,11 @@ async def list_results_paged(page: int = 0, size: int = 20):
     if entry and (now - entry["timestamp"] < cache["ttl"]):
         return entry["data"]
 
-    # build listing for this page - only image files, not JSON or DB
+    # Only list image files (jpg, png)
     all_entries = [
         e for e in os.listdir(path) 
         if os.path.isfile(os.path.join(path, e)) 
-        and not e.endswith('.json') 
-        and not e.endswith('.db')
+        and (e.lower().endswith('.jpg') or e.lower().endswith('.png') or e.lower().endswith('.jpeg'))
     ]
     all_entries.sort(key=lambda e: os.stat(os.path.join(path, e)).st_mtime, reverse=True)
 
@@ -239,7 +238,7 @@ async def list_results_paged(page: int = 0, size: int = 20):
     end = start + size
     page_entries = all_entries[start:end]
 
-    # load reviews and sidecar JSON for each page entry
+    # load reviews for each page entry
     db_file = os.path.join(path, "reviews.db")
     init_db(db_file)
 
@@ -248,19 +247,22 @@ async def list_results_paged(page: int = 0, size: int = 20):
         full = os.path.join(path, entry_name)
         stat = os.stat(full)
         file_review = get_review(db_file, entry_name)
-        meta = {}
-        # Strip batch suffix (-1, -2, etc) to find the base UUID json
-        base_name = os.path.splitext(entry_name)[0]
-        # Remove trailing -N pattern (e.g., ca4703a5-...-1 -> ca4703a5-...)
+        
+        # Extract UUID from filename and look for corresponding JSON
         import re
-        base_uuid = re.sub(r'-\d+$', '', base_name)
-        json_path = os.path.join(path, base_uuid + ".json")
-        if os.path.exists(json_path):
-            try:
-                with open(json_path, "r", encoding="utf-8") as f:
-                    meta = json.load(f)
-            except Exception:
-                meta = {}
+        base_name = os.path.splitext(entry_name)[0]
+        # Match UUID pattern in filename (with or without batch suffix)
+        uuid_match = re.match(r'^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', base_name)
+        meta = {}
+        if uuid_match:
+            uuid = uuid_match.group(1)
+            json_path = os.path.join(path, uuid + ".json")
+            if os.path.exists(json_path):
+                try:
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                except Exception:
+                    pass
 
         results.append(
             {
