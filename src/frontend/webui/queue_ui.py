@@ -48,10 +48,8 @@ def _fmt(ts):
 def get_queue_ui():
     with gr.Blocks() as queue_block:
         with gr.Row():
-            refresh = gr.Button("Refresh")
-            cancel_id = gr.Number(value=None, label="Job ID to cancel", precision=0)
-            cancel_btn = gr.Button("Cancel Job")
-            details_id = gr.Number(value=None, label="Job ID to view", precision=0)
+            job_id_input = gr.Number(value=None, label="Job ID", precision=0)
+            cancel_btn = gr.Button("Cancel")
             details_btn = gr.Button("Details")
         status = gr.Markdown("")
         table = gr.Dataframe(headers=["id", "status", "created_at", "started_at", "finished_at", "result"], datatype=["number","str","str","str","str","str"], interactive=False)
@@ -102,9 +100,8 @@ def get_queue_ui():
             )
             return f"Loaded job {job_id}", text
 
-        refresh.click(fn=_refresh, inputs=None, outputs=[table, status])
-        cancel_btn.click(fn=_cancel, inputs=[cancel_id], outputs=[status])
-        details_btn.click(fn=_details, inputs=[details_id], outputs=[status, details_area])
+        cancel_btn.click(fn=_cancel, inputs=[job_id_input], outputs=[status])
+        details_btn.click(fn=_details, inputs=[job_id_input], outputs=[status, details_area])
         
         # Auto-refresh on tab load
         queue_block.load(fn=_refresh, inputs=None, outputs=[table, status])
