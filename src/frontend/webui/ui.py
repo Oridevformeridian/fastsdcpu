@@ -1,4 +1,6 @@
 from datetime import datetime
+import subprocess
+import os
 
 import gradio as gr
 from backend.device import get_device_name
@@ -16,6 +18,21 @@ from frontend.webui.queue_ui import get_queue_ui
 from state import get_settings
 
 app_settings = get_settings()
+
+
+def _get_git_commit() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return "unknown"
 
 
 def _get_footer_message() -> str:
@@ -56,7 +73,11 @@ def get_web_ui() -> gr.Blocks:
         css="footer {visibility: hidden}",
     ) as fastsd_web_ui:
         gr.HTML("<center><h2>Image Generator 3d Pro Max Mini Micro Manic</h2></center>")
-        gr.HTML("<center><H1>FastSD CPU</H1></center>")
+        with gr.Row():
+            with gr.Column(scale=8):
+                gr.HTML("<center><H1>FastSD CPU</H1></center>")
+            with gr.Column(scale=2):
+                gr.Markdown(f"**Commit:** `{_get_git_commit()}`", elem_id="commit_hash")
         gr.Markdown(
             f"**Processor :  {get_device_name()}**",
             elem_id="processor",
