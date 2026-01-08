@@ -54,6 +54,7 @@ def get_web_ui() -> gr.Blocks:
         theme=theme,
         css="footer {visibility: hidden}",
     ) as fastsd_web_ui:
+        gr.HTML("<center><h2>Image Generator 3d Pro Max Mini Micro Manic</h2></center>")
         gr.HTML("<center><H1>FastSD CPU</H1></center>")
         gr.Markdown(
             f"**Processor :  {get_device_name()}**",
