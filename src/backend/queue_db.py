@@ -127,7 +127,8 @@ def cancel_job(db_path: str, job_id: int) -> bool:
         conn.close()
         return False
     status = row[0]
-    if status in ("done", "failed", "cancelled"):
+    # Can only cancel queued jobs, not running/done/failed/cancelled
+    if status != "queued":
         conn.close()
         return False
     cur.execute("UPDATE queue SET status = ? WHERE id = ?", ("cancelled", job_id))

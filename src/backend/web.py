@@ -449,6 +449,10 @@ def _queue_worker_loop(poll_interval: float = 1.0):
                     pass
 
             images = context.generate_text_to_image(app_settings.settings)
+            # Check if job was cancelled during generation
+            current_job = get_job(db_file, job_id)
+            if current_job and current_job.get("status") == "cancelled":
+                continue  # Skip completion, already marked cancelled
             if images:
                 saved = context.save_images(images, app_settings.settings)
                 complete_job(db_file, job_id, {"saved": saved, "latency": context.latency})
