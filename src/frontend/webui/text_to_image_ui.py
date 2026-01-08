@@ -71,6 +71,12 @@ def generate_text_to_image(
         try:
             with urllib.request.urlopen(req, timeout=5) as resp:
                 return json.load(resp)
+        except urllib.error.HTTPError as e:
+            try:
+                body = e.read().decode('utf-8')
+            except Exception:
+                body = str(e)
+            return {"error": f"HTTPError: {e.code} {body}"}
         except Exception as e:
             return {"error": str(e)}
 

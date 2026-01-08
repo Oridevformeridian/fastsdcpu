@@ -340,8 +340,21 @@ async def enqueue(diffusion_config: LCMDiffusionSetting):
         path = FastStableDiffusionPaths.get_results_path()
     db_file = os.path.join(path, "queue.db")
     init_queue_db(db_file)
-    payload = diffusion_config.model_dump()
-    job_id = enqueue_job(db_file, payload)
+    try:
+        payload = diffusion_config.model_dump()
+    except Exception as e:
+        # try fallback to dict
+        try:
+            payload = diffusion_config.dict()
+        except Exception as e2:
+            raise HTTPException(status_code=400, detail=f"Invalid diffusion config: {e} / {e2}")
+
+    try:
+        job_id = enqueue_job(db_file, payload)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to enqueue job: {e}")
+
+    print(f"Enqueued job {job_id}")
     return {"job_id": job_id, "status": "queued"}
 
 
