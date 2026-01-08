@@ -6,10 +6,12 @@ import urllib.parse
 import gradio as gr
 from state import get_settings
 
-API_BASE = os.environ.get("API_URL", "http://127.0.0.1:8000")
+API_BASE = os.environ.get("API_URL")  # if not set, operate locally without API
 
 
 def _api_get(path: str, params: dict = None):
+    if not API_BASE:
+        return None
     url = API_BASE.rstrip("/") + path
     if params:
         url = url + "?" + urllib.parse.urlencode(params)

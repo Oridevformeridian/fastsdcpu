@@ -11,7 +11,7 @@ import urllib.request
 import urllib.parse
 import os
 
-API_BASE = os.environ.get("API_URL", "http://127.0.0.1:8000")
+API_BASE = os.environ.get("API_URL")  # if not set, operate locally without API
 from frontend.webui.errors import show_error
 
 app_settings = get_settings()
@@ -67,6 +67,15 @@ def generate_image_to_image(
 
     def _enqueue():
         cfg = app_settings.settings.lcm_diffusion_setting
+        if not API_BASE:
+            try:
+                imgs = context.generate_text_to_image(app_settings.settings)
+                if imgs:
+                    saved = context.save_images(imgs, app_settings.settings)
+                    return {"local": True, "saved": saved}
+                return {"error": "local generation produced no images"}
+            except Exception as le:
+                return {"error": f"local generation failed: {le}"}
         try:
             payload = cfg.model_dump()
         except Exception:
@@ -86,6 +95,19 @@ def generate_image_to_image(
             except Exception:
                 body = str(e)
             return {"error": f"HTTPError: {e.code} {body}"}
+        except urllib.error.URLError as e:
+            reason = getattr(e, "reason", None)
+            msg = str(e)
+            if (isinstance(reason, ConnectionRefusedError)) or (hasattr(reason, "errno") and getattr(reason, "errno") == 111) or ("Connection refused" in msg):
+                try:
+                    imgs = context.generate_text_to_image(app_settings.settings)
+                    if imgs:
+                        saved = context.save_images(imgs, app_settings.settings)
+                        return {"local": True, "saved": saved}
+                    return {"error": "local generation produced no images"}
+                except Exception as le:
+                    return {"error": f"local generation failed: {le}"}
+            return {"error": str(e)}
         except Exception as e:
             return {"error": str(e)}
 
@@ -94,6 +116,9 @@ def generate_image_to_image(
         resp = future.result()
         if resp and resp.get("job_id"):
             return [], f"Enqueued job {resp.get('job_id')}"
+        elif resp and resp.get("local"):
+            saved = resp.get("saved") or []
+            return [], f"Ran locally, saved: {saved}"
         else:
             err = resp.get("error") if resp else "failed to enqueue"
             show_error(err)
