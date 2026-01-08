@@ -29,35 +29,16 @@ def get_results_review_ui():
     with gr.Blocks():
         with gr.Row():
             refresh = gr.Button("Refresh")
-            files_gallery = gr.Gallery(label="Generated results", columns=3, height=300)
+            files_gallery = gr.Gallery(label="Generated results", columns=3, height=240)
 
-        # tabular summary of generated files with metadata
-        with gr.Row():
-            files_table = gr.Dataframe(headers=["name", "mtime", "size", "prompt", "model", "status"], interactive=False)
+        status_area = gr.Markdown("")
 
-        with gr.Row():
-            filename = gr.Textbox(label="Filename", interactive=False)
-            mtime = gr.Textbox(label="Modified", interactive=False)
-            metadata = gr.Textbox(label="Metadata", interactive=False, lines=4)
-        with gr.Row():
-            status = gr.Radio(["pending", "approved", "rejected"], label="Review status")
-            note = gr.Textbox(label="Note", lines=2)
-        with gr.Row():
-            approve_btn = gr.Button("Approve")
-            reject_btn = gr.Button("Reject")
-            clear_btn = gr.Button("Clear")
-            use_img2img_btn = gr.Button("Use in Image to Image")
-            use_variations_btn = gr.Button("Use in Image Variations")
-
-    def _load_files():
+        # create per-file cards
         paths = _list_results_paths()
-        # build table rows: name, mtime, size, prompt, model, status
-        table_rows = []
         for p in paths:
             name = os.path.basename(p)
             stat = os.stat(p)
             m = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime))
-            size = stat.st_size
             # read sidecar json
             prompt_val = ""
             model_val = ""
@@ -70,82 +51,72 @@ def get_results_review_ui():
                         model_val = data.get("model", "") or data.get("openvino_model", "")
                 except Exception:
                     pass
+
             db_path = os.path.join(os.path.dirname(p), "reviews.db")
             init_db(db_path)
             entry = get_review(db_path, name)
             status_val = entry.get("status") if entry else "pending"
-            table_rows.append([name, m, size, prompt_val, model_val, status_val])
-        # outputs: gallery paths and table rows
-        return paths, table_rows
+            note_val = entry.get("note") if entry else ""
 
-    def _select_file(img_path):
-        if not img_path:
-            return "", "", "", "pending", ""
-        name = os.path.basename(img_path)
-        stat = os.stat(img_path)
-        m = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime))
-        db_path = os.path.join(os.path.dirname(img_path), "reviews.db")
-        init_db(db_path)
-        entry = get_review(db_path, name)
+            with gr.Row(variant="panel"):
+                img = gr.Image(value=p, type="filepath", interactive=False)
+                with gr.Column():
+                    name_tb = gr.Textbox(value=name, label="File", interactive=False)
+                    mtime_tb = gr.Textbox(value=m, label="Modified", interactive=False)
+                    prompt_tb = gr.Textbox(value=prompt_val, label="Prompt", interactive=False, lines=2)
+                    model_tb = gr.Textbox(value=model_val, label="Model", interactive=False)
+                    status_radio = gr.Radio(["pending", "approved", "rejected"], value=status_val, label="Status")
+                    note_tb = gr.Textbox(value=note_val, label="Note", lines=2)
+                    path_state = gr.State(value=p)
+                    approve_btn = gr.Button("Approve")
+                    reject_btn = gr.Button("Reject")
+                    use_img2img_btn = gr.Button("Use in Image to Image")
+                    use_var_btn = gr.Button("Use in Image Variations")
+                    clear_btn = gr.Button("Clear")
 
-        # try to read sidecar json metadata file (same basename + .json)
-        meta_text = ""
-        json_path = os.path.join(os.path.dirname(img_path), os.path.splitext(name)[0] + ".json")
-        if os.path.exists(json_path):
-            try:
-                with open(json_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    # display some common keys if present
-                    parts = []
-                    for k in ("prompt", "negative_prompt", "model", "settings"):
-                        if k in data:
-                            parts.append(f"{k}: {data[k]}")
-                    if not parts:
-                        meta_text = json.dumps(data)
-                    else:
-                        meta_text = " | ".join(parts)
-            except Exception:
-                meta_text = "(error reading metadata)"
+                    def _approve(path, note_text):
+                        name = os.path.basename(path)
+                        dbp = os.path.join(os.path.dirname(path), "reviews.db")
+                        init_db(dbp)
+                        set_review(dbp, name, "approved", note_text)
+                        return "approved", note_text, f"Approved {name}"
 
-        status_val = entry.get("status") if entry else "pending"
-        note_val = entry.get("note") if entry else ""
-        return name, m, meta_text, status_val, note_val
+                    def _reject(path, note_text):
+                        name = os.path.basename(path)
+                        dbp = os.path.join(os.path.dirname(path), "reviews.db")
+                        init_db(dbp)
+                        set_review(dbp, name, "rejected", note_text)
+                        return "rejected", note_text, f"Rejected {name}"
 
-    def _set_status(img_path, new_status, note_text):
-        if not img_path:
-            return
-        name = os.path.basename(img_path)
-        db_path = os.path.join(os.path.dirname(img_path), "reviews.db")
-        init_db(db_path)
-        set_review(db_path, name, new_status, note_text)
-        return _load_files()
+                    def _clear_row(path):
+                        name = os.path.basename(path)
+                        dbp = os.path.join(os.path.dirname(path), "reviews.db")
+                        init_db(dbp)
+                        delete_review(dbp, name)
+                        return "pending", "", f"Cleared {name}"
 
+                    def _use_img2img(path):
+                        try:
+                            pil = Image.open(path).convert("RGB")
+                            app_settings.settings.lcm_diffusion_setting.init_image = pil
+                            return f"Set {os.path.basename(path)} as init image"
+                        except Exception:
+                            return "(failed to load image)"
 
-    def _use_in_img2img(img_path):
-        if not img_path:
-            return _load_files()
-        try:
-            pil = Image.open(img_path).convert("RGB")
-            app_settings.settings.lcm_diffusion_setting.init_image = pil
-        except Exception:
-            pass
-        return _load_files()
+                    def _use_variations(path):
+                        try:
+                            pil = Image.open(path).convert("RGB")
+                            app_settings.settings.lcm_diffusion_setting.init_image = pil
+                            app_settings.settings.lcm_diffusion_setting.diffusion_task = "image_variations"
+                            return f"Set {os.path.basename(path)} for variations"
+                        except Exception:
+                            return "(failed)"
 
-    def _clear(img_path):
-        if not img_path:
-            return _load_files(), "", "", "", "pending", ""
-        name = os.path.basename(img_path)
-        db_path = os.path.join(os.path.dirname(img_path), "reviews.db")
-        init_db(db_path)
-        delete_review(db_path, name)
-        # return gallery+table and clear fields
-        paths, table = _load_files()
-        return paths, table, "", "", "", "pending", ""
+                    approve_btn.click(fn=_approve, inputs=[path_state, note_tb], outputs=[status_radio, note_tb, status_area])
+                    reject_btn.click(fn=_reject, inputs=[path_state, note_tb], outputs=[status_radio, note_tb, status_area])
+                    clear_btn.click(fn=_clear_row, inputs=[path_state], outputs=[status_radio, note_tb, status_area])
+                    use_img2img_btn.click(fn=_use_img2img, inputs=[path_state], outputs=[status_area])
+                    use_var_btn.click(fn=_use_variations, inputs=[path_state], outputs=[status_area])
 
-    refresh.click(fn=_load_files, inputs=None, outputs=[files_gallery, files_table])
-    files_gallery.select(fn=_select_file, inputs=files_gallery, outputs=[filename, mtime, metadata, status, note])
-    approve_btn.click(lambda p, n: _set_status(p, "approved", n), inputs=[files_gallery, note], outputs=[files_gallery, files_table])
-    reject_btn.click(lambda p, n: _set_status(p, "rejected", n), inputs=[files_gallery, note], outputs=[files_gallery, files_table])
-    clear_btn.click(fn=_clear, inputs=files_gallery, outputs=[files_gallery, files_table, filename, mtime, metadata, status, note])
-    use_img2img_btn.click(fn=_use_in_img2img, inputs=files_gallery, outputs=[files_gallery, files_table])
-    use_variations_btn.click(fn=lambda p: (_use_in_img2img(p)[0], _use_in_img2img(p)[1]), inputs=files_gallery, outputs=[files_gallery, files_table])
+        # wire refresh to update the gallery
+        refresh.click(fn=_list_results_paths, inputs=None, outputs=[files_gallery])
