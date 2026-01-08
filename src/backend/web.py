@@ -2,8 +2,6 @@ import platform
 import os
 
 import uvicorn
-import json
-import threading
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -19,6 +17,13 @@ from models.interface_types import InterfaceType
 from state import get_settings
 from paths import FastStableDiffusionPaths
 from backend.api.models.review import ReviewRequest, ReviewResponse
+from backend.reviews_db import (
+    init_db,
+    set_review,
+    get_review,
+    delete_review,
+    list_reviews,
+)
 
 app_settings = get_settings()
 app = FastAPI(
@@ -147,49 +152,29 @@ async def list_results():
 
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Results directory not found")
-
-    # reviews stored in a simple JSON file in the results directory
-    REVIEWS_FILENAME = ".reviews.json"
-    reviews_file = os.path.join(path, REVIEWS_FILENAME)
-
-    _reviews_lock = threading.Lock()
-
-    def _load_reviews():
-        if not os.path.exists(reviews_file):
-            return {}
-        try:
-            with open(reviews_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-
-    def _save_reviews(data: dict):
-        tmp = reviews_file + ".tmp"
-        with _reviews_lock:
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            try:
-                os.replace(tmp, reviews_file)
-            except Exception:
-                pass
-
-    reviews = _load_reviews()
+    # Use SQLite for review persistence
+    db_file = os.path.join(path, "reviews.db")
+    init_db(db_file)
+    reviews = list_reviews(db_file)
 
     files = []
-    for entry in sorted(os.listdir(path), reverse=True):
+    entries = [e for e in os.listdir(path) if os.path.isfile(os.path.join(path, e))]
+    # sort by modification time (newest first)
+    entries.sort(key=lambda e: os.stat(os.path.join(path, e)).st_mtime, reverse=True)
+
+    for entry in entries:
         full = os.path.join(path, entry)
-        if os.path.isfile(full):
-            stat = os.stat(full)
-            file_review = reviews.get(entry) if isinstance(reviews, dict) else None
-            files.append(
-                {
-                    "name": entry,
-                    "url": f"/results/{entry}",
-                    "size": stat.st_size,
-                    "mtime": stat.st_mtime,
-                    "review": file_review,
-                }
-            )
+        stat = os.stat(full)
+        file_review = reviews.get(entry)
+        files.append(
+            {
+                "name": entry,
+                "url": f"/results/{entry}",
+                "size": stat.st_size,
+                "mtime": stat.st_mtime,
+                "review": file_review,
+            }
+        )
 
     return files
 
@@ -209,14 +194,8 @@ async def get_result_review(name: str):
     if not os.path.isfile(full):
         raise HTTPException(status_code=404, detail="Result file not found")
 
-    reviews_file = os.path.join(path, ".reviews.json")
-    try:
-        with open(reviews_file, "r", encoding="utf-8") as f:
-            reviews = json.load(f)
-    except Exception:
-        reviews = {}
-
-    entry = reviews.get(name)
+    db_file = os.path.join(path, "reviews.db")
+    entry = get_review(db_file, name)
     if not entry:
         raise HTTPException(status_code=404, detail="No review metadata for this file")
 
@@ -237,32 +216,8 @@ async def set_result_review(name: str, review: ReviewRequest):
     if not os.path.isfile(full):
         raise HTTPException(status_code=404, detail="Result file not found")
 
-    reviews_file = os.path.join(path, ".reviews.json")
-    _reviews_lock = threading.Lock()
-
-    def _load():
-        if not os.path.exists(reviews_file):
-            return {}
-        try:
-            with open(reviews_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-
-    def _save(data: dict):
-        tmp = reviews_file + ".tmp"
-        with _reviews_lock:
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            try:
-                os.replace(tmp, reviews_file)
-            except Exception:
-                pass
-
-    reviews = _load()
-    reviews[name] = {"status": review.status.value, "note": review.note}
-    _save(reviews)
-
+    db_file = os.path.join(path, "reviews.db")
+    set_review(db_file, name, review.status.value, review.note)
     return ReviewResponse(name=name, status=review.status, note=review.note)
 
 
@@ -280,19 +235,6 @@ async def delete_result_review(name: str):
     if not os.path.isfile(full):
         raise HTTPException(status_code=404, detail="Result file not found")
 
-    reviews_file = os.path.join(path, ".reviews.json")
-    try:
-        with open(reviews_file, "r", encoding="utf-8") as f:
-            reviews = json.load(f)
-    except Exception:
-        reviews = {}
-
-    if name in reviews:
-        reviews.pop(name)
-        try:
-            with open(reviews_file, "w", encoding="utf-8") as f:
-                json.dump(reviews, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
-
-    return {"deleted": True}
+    db_file = os.path.join(path, "reviews.db")
+    deleted = delete_review(db_file, name)
+    return {"deleted": deleted}
