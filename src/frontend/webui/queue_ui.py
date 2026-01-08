@@ -49,8 +49,11 @@ def get_queue_ui():
             refresh = gr.Button("Refresh")
             cancel_id = gr.Number(value=None, label="Job ID to cancel", precision=0)
             cancel_btn = gr.Button("Cancel Job")
+            details_id = gr.Number(value=None, label="Job ID to view", precision=0)
+            details_btn = gr.Button("Details")
         status = gr.Markdown("")
         table = gr.Dataframe(headers=["id", "status", "created_at", "started_at", "finished_at", "result"], datatype=["number","str","str","str","str","str"], interactive=False)
+        details_area = gr.Markdown("")
 
         def _refresh():
             payload = _api_get("/api/queue")
@@ -76,7 +79,26 @@ def get_queue_ui():
                 return "Cancel failed"
             return f"Cancelled {job_id}"
 
+
+        def _details(job_id):
+            if not job_id:
+                return "No job id provided", ""
+            payload = _api_get(f"/api/queue/{int(job_id)}")
+            if not payload or not payload.get("job"):
+                return f"Job {job_id} not found", ""
+            j = payload.get("job")
+            text = (
+                f"**Job {j.get('id')}**  \n"
+                f"- status: {j.get('status')}  \n"
+                f"- created: {_fmt(j.get('created_at'))}  \n"
+                f"- started: {_fmt(j.get('started_at'))}  \n"
+                f"- finished: {_fmt(j.get('finished_at'))}  \n"
+                f"- result: {j.get('result') or ''}  \n"
+            )
+            return f"Loaded job {job_id}", text
+
         refresh.click(fn=_refresh, inputs=None, outputs=[table, status])
         cancel_btn.click(fn=_cancel, inputs=[cancel_id], outputs=[status])
+        details_btn.click(fn=_details, inputs=[details_id], outputs=[status, details_area])
         # load initially
         refresh.click(fn=_refresh, inputs=None, outputs=[table, status])

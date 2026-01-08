@@ -27,6 +27,7 @@ from backend.reviews_db import (
 from backend.queue_db import (
     init_db as init_queue_db,
     enqueue_job,
+    get_job,
     list_jobs as list_queue_jobs,
     pop_next_job,
     complete_job,
@@ -374,6 +375,23 @@ async def cancel_queue_job(job_id: int):
     if not ok:
         raise HTTPException(status_code=404, detail="Job not found or cannot be cancelled")
     return {"job_id": job_id, "status": "cancelled"}
+
+
+@app.get(
+    "/api/queue/{job_id}",
+    description="Get queue job details",
+    summary="Get job",
+)
+async def get_queue_job(job_id: int):
+    path = app_settings.settings.generated_images.path
+    if not path:
+        path = FastStableDiffusionPaths.get_results_path()
+    db_file = os.path.join(path, "queue.db")
+    init_queue_db(db_file)
+    job = get_job(db_file, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {"job": job}
 
 
 def _queue_worker_loop(poll_interval: float = 1.0):
