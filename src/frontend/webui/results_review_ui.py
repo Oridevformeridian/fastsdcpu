@@ -65,14 +65,17 @@ def get_results_review_ui():
     PAGE_SIZE = 6
 
     with gr.Blocks() as results_block:
+        # Top navigation
         with gr.Row():
-            refresh = gr.Button("Refresh")
-            prev_btn = gr.Button("Prev")
-            next_btn = gr.Button("Next")
-            page_state = gr.State(value=0)
-            files_gallery = gr.Gallery(label="Generated results", columns=3, height=240)
-
+            prev_btn_top = gr.Button("←", scale=0, min_width=50)
+            page_indicator = gr.Markdown("Page 1", scale=0)
+            next_btn_top = gr.Button("→", scale=0, min_width=50)
+            
+        # Preview gallery at top
+        files_gallery = gr.Gallery(label="Generated results", columns=3, height=240)
+        
         status_area = gr.Markdown("")
+        page_state = gr.State(value=0)
         
         # Hidden timer for auto-refresh every 10 seconds
         timer = gr.Timer(value=10, active=True)
@@ -177,6 +180,12 @@ def get_results_review_ui():
                 show_json_btn.click(fn=_show_json, inputs=[path_state], outputs=[status_area, status_area])
                 regen_btn.click(fn=_regenerate, inputs=[path_state], outputs=[status_area])
 
+        # Bottom navigation (same as top)
+        with gr.Row():
+            prev_btn_bottom = gr.Button("←", scale=0, min_width=50)
+            page_indicator_bottom = gr.Markdown("Page 1", scale=0)
+            next_btn_bottom = gr.Button("→", scale=0, min_width=50)
+
         def _populate_page(page_index: int):
             payload = _api_get("/api/results/paged", {"page": page_index, "size": PAGE_SIZE})
             if not payload:
@@ -186,7 +195,8 @@ def get_results_review_ui():
                 start = page_index * PAGE_SIZE
                 page_paths = paths[start : start + PAGE_SIZE]
                 # build out_values using minimal info
-                out = [page_index]
+                page_text = f"Page {page_index + 1} of {max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)}"
+                out = [page_paths, page_index, page_text, page_text]
                 for i in range(PAGE_SIZE):
                     if i < len(page_paths):
                         p = page_paths[i]
@@ -199,7 +209,9 @@ def get_results_review_ui():
                 return (page_paths,) + tuple(out)
 
             page_paths = []
-            out = [page_index]
+            total_results = payload.get("total", 0)
+            page_text = f"Page {page_index + 1} of {max(1, (total_results + PAGE_SIZE - 1) // PAGE_SIZE)}"
+            out = [page_index, page_text, page_text]
             for i in range(PAGE_SIZE):
                 if i < len(payload.get("results", [])):
                     item = payload["results"][i]
@@ -224,13 +236,16 @@ def get_results_review_ui():
             new_page = min(max_page, page_index + 1)
             return _populate_page(new_page)
 
-        # wire pagination controls: outputs are files_gallery, page_state + per-slot component values
-        outputs = [files_gallery, page_state]
+        # wire pagination controls: outputs are files_gallery, page_state, page_indicator (top & bottom) + per-slot component values
+        outputs = [files_gallery, page_state, page_indicator, page_indicator_bottom]
         for i in range(PAGE_SIZE):
             outputs.extend([image_slots[i], name_slots[i], mtime_slots[i], prompt_slots[i], model_slots[i], path_states[i]])
-        refresh.click(fn=lambda: _populate_page(0), inputs=None, outputs=outputs)
-        prev_btn.click(fn=_prev, inputs=[page_state], outputs=outputs)
-        next_btn.click(fn=_next, inputs=[page_state], outputs=outputs)
+        
+        # Wire all navigation buttons
+        prev_btn_top.click(fn=_prev, inputs=[page_state], outputs=outputs)
+        next_btn_top.click(fn=_next, inputs=[page_state], outputs=outputs)
+        prev_btn_bottom.click(fn=_prev, inputs=[page_state], outputs=outputs)
+        next_btn_bottom.click(fn=_next, inputs=[page_state], outputs=outputs)
         
         # Auto-refresh on tab load
         results_block.load(fn=lambda: _populate_page(0), inputs=None, outputs=outputs)
