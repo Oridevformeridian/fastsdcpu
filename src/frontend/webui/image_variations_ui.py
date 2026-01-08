@@ -62,6 +62,12 @@ def generate_image_variations(
 
     def _enqueue():
         cfg = app_settings.settings.lcm_diffusion_setting
+        
+        # Convert PIL Image to base64 if present (needed for JSON serialization)
+        if cfg.init_image and hasattr(cfg.init_image, 'mode'):  # Check if it's a PIL Image
+            from backend.base64_image import pil_image_to_base64_str
+            cfg.init_image = pil_image_to_base64_str(cfg.init_image)
+        
         if not API_BASE:
             try:
                 imgs = context.generate_text_to_image(app_settings.settings)

@@ -57,6 +57,12 @@ def generate_text_to_image(
 
     def _enqueue():
         cfg = app_settings.settings.lcm_diffusion_setting
+        
+        # Convert PIL Image to base64 if present (needed for JSON serialization)
+        if cfg.init_image and hasattr(cfg.init_image, 'mode'):  # Check if it's a PIL Image
+            from backend.base64_image import pil_image_to_base64_str
+            cfg.init_image = pil_image_to_base64_str(cfg.init_image)
+        
         # if no API configured, run local generation directly
         if not API_BASE:
             try:
