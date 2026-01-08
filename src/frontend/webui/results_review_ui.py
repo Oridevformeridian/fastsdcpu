@@ -188,9 +188,9 @@ def get_results_review_ui():
                         name = os.path.basename(p)
                         stat = os.stat(p)
                         m = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime))
-                        out.extend([p, name, m, "", "", "pending", "", p])
+                        out.extend([p, name, m, "", "", p])
                     else:
-                        out.extend([None, "", "", "", "", "pending", "", ""])
+                        out.extend([None, "", "", "", "", ""])
                 return (page_paths,) + tuple(out)
 
             page_paths = []
@@ -203,12 +203,10 @@ def get_results_review_ui():
                     mtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(item.get("mtime", 0)))
                     prompt_val = item.get("meta", {}).get("prompt", "")
                     model_val = item.get("meta", {}).get("model", "") or item.get("meta", {}).get("openvino_model", "")
-                    status_val = item.get("review", {}).get("status") if item.get("review") else "pending"
-                    note_val = item.get("review", {}).get("note") if item.get("review") else ""
                     page_paths.append(url)
-                    out.extend([url, name, mtime, prompt_val, model_val, status_val, note_val, url])
+                    out.extend([url, name, mtime, prompt_val, model_val, url])
                 else:
-                    out.extend([None, "", "", "", "", "pending", "", ""]) 
+                    out.extend([None, "", "", "", "", ""]) 
             return (page_paths,) + tuple(out)
 
         def _prev(page_index: int):
@@ -224,7 +222,7 @@ def get_results_review_ui():
         # wire pagination controls: outputs are files_gallery, page_state + per-slot component values
         outputs = [files_gallery, page_state]
         for i in range(PAGE_SIZE):
-            outputs.extend([image_slots[i], name_slots[i], mtime_slots[i], prompt_slots[i], model_slots[i], status_slots[i], note_slots[i], path_states[i]])
+            outputs.extend([image_slots[i], name_slots[i], mtime_slots[i], prompt_slots[i], model_slots[i], path_states[i]])
         refresh.click(fn=lambda: _populate_page(0), inputs=None, outputs=outputs)
         prev_btn.click(fn=_prev, inputs=[page_state], outputs=outputs)
         next_btn.click(fn=_next, inputs=[page_state], outputs=outputs)
