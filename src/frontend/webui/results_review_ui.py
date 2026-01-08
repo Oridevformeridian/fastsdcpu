@@ -212,6 +212,12 @@ def get_results_review_ui():
                         out.extend([None, "", "", "", "", ""])
                 return tuple(out)
 
+            # Get local file paths instead of URLs for gallery (Gradio doesn't like 127.0.0.1 URLs)
+            results_path = app_settings.settings.generated_images.path
+            if not results_path:
+                from paths import FastStableDiffusionPaths
+                results_path = FastStableDiffusionPaths.get_results_path()
+
             page_paths = []
             total_results = payload.get("total", 0)
             page_text = f"Page {page_index + 1} of {max(1, (total_results + PAGE_SIZE - 1) // PAGE_SIZE)}"
@@ -220,12 +226,13 @@ def get_results_review_ui():
                 if i < len(payload.get("results", [])):
                     item = payload["results"][i]
                     name = item.get("name")
-                    url = API_BASE.rstrip("/") + item.get("url")
+                    # Use local file path instead of URL to avoid safehttpx validation issues
+                    local_path = os.path.join(results_path, name)
                     mtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(item.get("mtime", 0)))
                     prompt_val = item.get("meta", {}).get("prompt", "")
                     model_val = item.get("meta", {}).get("model", "") or item.get("meta", {}).get("openvino_model", "")
-                    page_paths.append(url)
-                    out.extend([url, name, mtime, prompt_val, model_val, url])
+                    page_paths.append(local_path)
+                    out.extend([local_path, name, mtime, prompt_val, model_val, local_path])
                 else:
                     out.extend([None, "", "", "", "", ""]) 
             return tuple([page_paths] + out)
