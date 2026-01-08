@@ -194,8 +194,13 @@ async def list_results_paged(page: int = 0, size: int = 20):
                 try:
                     with open(json_path, "r", encoding="utf-8") as f:
                         meta = json.load(f)
-                except Exception:
-                    pass
+                    print(f"[DEBUG] Loaded JSON for {entry_name}: UUID={uuid}, keys={list(meta.keys())}, prompt={meta.get('prompt', 'N/A')[:50]}")
+                except Exception as e:
+                    print(f"[DEBUG] Failed to load JSON for {entry_name}: {e}")
+            else:
+                print(f"[DEBUG] JSON not found for {entry_name}: {json_path}")
+        else:
+            print(f"[DEBUG] No UUID match for {entry_name}")
 
         results.append(
             {
