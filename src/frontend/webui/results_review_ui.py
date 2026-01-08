@@ -73,6 +73,9 @@ def get_results_review_ui():
             files_gallery = gr.Gallery(label="Generated results", columns=3, height=240)
 
         status_area = gr.Markdown("")
+        
+        # Hidden timer for auto-refresh every 10 seconds
+        timer = gr.Timer(value=10, active=True)
 
         # create fixed slots for page items (image, filename, modified, prompt, model, actions)
         image_slots = []
@@ -231,5 +234,8 @@ def get_results_review_ui():
         
         # Auto-refresh on tab load
         results_block.load(fn=lambda: _populate_page(0), inputs=None, outputs=outputs)
+        
+        # Auto-refresh every 10 seconds via timer (refresh current page)
+        timer.tick(fn=lambda p: _populate_page(p), inputs=[page_state], outputs=outputs)
     
     return results_block

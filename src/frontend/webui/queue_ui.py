@@ -56,6 +56,9 @@ def get_queue_ui():
         status = gr.Markdown("")
         table = gr.Dataframe(headers=["id", "status", "created_at", "started_at", "finished_at", "result"], datatype=["number","str","str","str","str","str"], interactive=False)
         details_area = gr.Markdown("")
+        
+        # Hidden timer for auto-refresh every 3 seconds
+        timer = gr.Timer(value=3, active=True)
 
         def _refresh():
             payload = _api_get("/api/queue")
@@ -105,5 +108,8 @@ def get_queue_ui():
         
         # Auto-refresh on tab load
         queue_block.load(fn=_refresh, inputs=None, outputs=[table, status])
+        
+        # Auto-refresh every 3 seconds via timer
+        timer.tick(fn=_refresh, inputs=None, outputs=[table, status])
     
     return queue_block
