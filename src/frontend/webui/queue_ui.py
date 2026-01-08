@@ -6,7 +6,7 @@ import urllib.parse
 import gradio as gr
 from state import get_settings
 
-API_BASE = os.environ.get("API_URL", "http://0.0.0.0:7860")  # default to 7860
+API_BASE = os.environ.get("API_URL", "http://127.0.0.1:8000")  # default to API server
 
 
 def _api_get(path: str, params: dict = None):
