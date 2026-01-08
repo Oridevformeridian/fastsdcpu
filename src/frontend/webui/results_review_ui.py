@@ -143,16 +143,16 @@ def get_results_review_ui():
 
                 def _show_json(path):
                     if not path:
-                        return "(no file)", ""
+                        return "(no file)"
                     name = os.path.basename(path)
                     json_url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(os.path.splitext(name)[0] + '.json')}"
                     try:
                         with urllib.request.urlopen(json_url, timeout=2) as f:
                             data = json.load(f)
                             pretty = json.dumps(data, indent=2)
-                            return f"Loaded JSON for {name}", f"```\n{pretty}\n```"
+                            return f"Loaded JSON for {name}:\n```json\n{pretty}\n```"
                     except Exception as e:
-                        return f"failed to load json: {e}", ""
+                        return f"failed to load json: {e}"
 
                 def _regenerate(path):
                     if not path:
@@ -177,7 +177,7 @@ def get_results_review_ui():
 
                 use_img2img_btn.click(fn=_use_img2img, inputs=[path_state], outputs=[status_area])
                 use_var_btn.click(fn=_use_variations, inputs=[path_state], outputs=[status_area])
-                show_json_btn.click(fn=_show_json, inputs=[path_state], outputs=[status_area, status_area])
+                show_json_btn.click(fn=_show_json, inputs=[path_state], outputs=[status_area])
                 regen_btn.click(fn=_regenerate, inputs=[path_state], outputs=[status_area])
 
         # Bottom navigation (same as top)
@@ -206,7 +206,7 @@ def get_results_review_ui():
                         out.extend([p, name, m, "", "", p])
                     else:
                         out.extend([None, "", "", "", "", ""])
-                return (page_paths,) + tuple(out)
+                return tuple(out)
 
             page_paths = []
             total_results = payload.get("total", 0)
@@ -224,7 +224,7 @@ def get_results_review_ui():
                     out.extend([url, name, mtime, prompt_val, model_val, url])
                 else:
                     out.extend([None, "", "", "", "", ""]) 
-            return (page_paths,) + tuple(out)
+            return tuple([page_paths] + out)
 
         def _prev(page_index: int):
             new_page = max(0, page_index - 1)
