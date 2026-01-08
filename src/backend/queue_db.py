@@ -135,3 +135,25 @@ def cancel_job(db_path: str, job_id: int) -> bool:
     conn.commit()
     conn.close()
     return True
+
+
+def reset_orphaned_jobs(db_path: str) -> int:
+    """Reset any 'running' jobs to 'failed' on startup (orphaned by container restart/crash).
+    Returns the count of jobs reset."""
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    now = time.time()
+    # Find all running jobs
+    cur.execute("SELECT id FROM queue WHERE status = 'running'")
+    rows = cur.fetchall()
+    count = len(rows)
+    if count > 0:
+        # Mark them as failed with appropriate message
+        cur.execute(
+            "UPDATE queue SET status = ?, finished_at = ?, result = ? WHERE status = 'running'",
+            ("failed", now, json.dumps({"error": "Job interrupted by container restart"})),
+        )
+        conn.commit()
+    conn.close()
+    return count

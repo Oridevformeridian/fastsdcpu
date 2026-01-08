@@ -24,6 +24,7 @@ from backend.queue_db import (
     complete_job,
     fail_job,
     cancel_job,
+    reset_orphaned_jobs,
 )
 import threading
 import time
@@ -212,6 +213,10 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
         path = FastStableDiffusionPaths.get_results_path()
     db_file = os.path.join(path, "queue.db")
     init_queue_db(db_file)
+    # Clean up any orphaned 'running' jobs from previous container runs
+    orphaned_count = reset_orphaned_jobs(db_file)
+    if orphaned_count > 0:
+        print(f"Reset {orphaned_count} orphaned job(s) from previous run")
     while True:
         job = None
         try:
