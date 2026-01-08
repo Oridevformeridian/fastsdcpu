@@ -87,10 +87,11 @@ def generate_image_to_image(
         future = executor.submit(_enqueue)
         resp = future.result()
         if resp and resp.get("job_id"):
-            return []
+            return [], f"Enqueued job {resp.get('job_id')}"
         else:
-            show_error(resp.get("error") if resp else "failed to enqueue")
-            return None
+            err = resp.get("error") if resp else "failed to enqueue"
+            show_error(err)
+            return None, f"Error: {err}"
 
     previous_width = image_width
     previous_height = image_height
@@ -117,6 +118,7 @@ def get_image_to_image_ui() -> None:
                         elem_id="generate_button",
                         scale=0,
                     )
+                status = gr.Markdown("")
                 negative_prompt = gr.Textbox(
                     label="Negative prompt (Works in LCM-LoRA mode, set guidance > 1.0):",
                     lines=1,
@@ -149,5 +151,5 @@ def get_image_to_image_ui() -> None:
     generate_btn.click(
         fn=generate_image_to_image,
         inputs=input_params,
-        outputs=output,
+        outputs=[output, status],
     )
