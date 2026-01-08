@@ -6,6 +6,12 @@ from constants import DEVICE
 from state import get_settings, get_context
 from frontend.utils import is_reshape_required
 from concurrent.futures import ThreadPoolExecutor
+import json
+import urllib.request
+import urllib.parse
+import os
+
+API_BASE = os.environ.get("API_URL", "http://127.0.0.1:8000")
 from frontend.webui.errors import show_error
 
 app_settings = get_settings()
@@ -49,21 +55,33 @@ def generate_text_to_image(
             num_images,
         )
 
+    def _enqueue():
+        cfg = app_settings.settings.lcm_diffusion_setting
+        # pydantic v2 -> model_dump, fallback to dict()
+        try:
+            payload = cfg.model_dump()
+        except Exception:
+            try:
+                payload = cfg.dict()
+            except Exception:
+                payload = {}
+        url = API_BASE.rstrip("/") + "/api/queue"
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return json.load(resp)
+        except Exception as e:
+            return {"error": str(e)}
+
     with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(
-            context.generate_text_to_image,
-            app_settings.settings,
-            reshape,
-            DEVICE,
-        )
-        images = future.result()
-        if images:
-            context.save_images(
-                images,
-                app_settings.settings,
-            )
+        future = executor.submit(_enqueue)
+        resp = future.result()
+        if resp and resp.get("job_id"):
+            return []
         else:
-            show_error(context.error)
+            show_error(resp.get("error") if resp else "failed to enqueue")
+            return None
 
     previous_width = image_width
     previous_height = image_height
