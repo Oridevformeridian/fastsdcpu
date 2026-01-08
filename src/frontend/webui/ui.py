@@ -11,6 +11,7 @@ from frontend.webui.lora_models_ui import get_lora_models_ui
 from frontend.webui.models_ui import get_models_ui
 from frontend.webui.text_to_image_ui import get_text_to_image_ui
 from frontend.webui.upscaler_ui import get_upscaler_ui
+from frontend.webui.results_review_ui import get_results_review_ui
 from state import get_settings
 
 app_settings = get_settings()
@@ -91,6 +92,8 @@ def get_web_ui() -> gr.Blocks:
                 get_lora_models_ui()
             with gr.TabItem("ControlNet"):
                 get_controlnet_ui()
+            with gr.TabItem("Results"):
+                get_results_review_ui()
 
         gr.HTML(_get_footer_message())
 
