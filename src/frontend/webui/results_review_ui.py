@@ -68,7 +68,7 @@ def get_results_review_ui():
         # Top navigation
         with gr.Row():
             prev_btn_top = gr.Button("←", scale=0, min_width=50)
-            page_indicator = gr.Markdown("Page 1", scale=0)
+            page_indicator = gr.Markdown("Page 1")
             next_btn_top = gr.Button("→", scale=0, min_width=50)
             
         # Preview gallery at top
@@ -183,7 +183,7 @@ def get_results_review_ui():
         # Bottom navigation (same as top)
         with gr.Row():
             prev_btn_bottom = gr.Button("←", scale=0, min_width=50)
-            page_indicator_bottom = gr.Markdown("Page 1", scale=0)
+            page_indicator_bottom = gr.Markdown("Page 1")
             next_btn_bottom = gr.Button("→", scale=0, min_width=50)
 
         def _populate_page(page_index: int):
