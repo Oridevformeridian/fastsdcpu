@@ -1,7 +1,8 @@
 import platform
+import os
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.models.response import StableDiffusionResponse
@@ -12,6 +13,7 @@ from backend.models.lcmdiffusion_setting import DiffusionTask, LCMDiffusionSetti
 from constants import APP_VERSION, DEVICE
 from context import Context
 from models.interface_types import InterfaceType
+from paths import FastStableDiffusionPaths
 from state import get_settings
 from backend.queue_db import (
     init_db as init_queue_db,
