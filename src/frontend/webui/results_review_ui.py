@@ -72,14 +72,12 @@ def get_results_review_ui():
 
         status_area = gr.Markdown("")
 
-        # create fixed slots for page items
+        # create fixed slots for page items (image, filename, modified, prompt, model, actions)
         image_slots = []
         name_slots = []
         mtime_slots = []
         prompt_slots = []
         model_slots = []
-        status_slots = []
-        note_slots = []
         path_states = []
 
         for i in range(PAGE_SIZE):
@@ -89,56 +87,28 @@ def get_results_review_ui():
                 mtime_tb = gr.Textbox(value="", label="Modified", interactive=False)
                 prompt_tb = gr.Textbox(value="", label="Prompt", interactive=False, lines=2)
                 model_tb = gr.Textbox(value="", label="Model", interactive=False)
-                status_radio = gr.Radio(["pending", "approved", "rejected"], value="pending", label="Status")
-                note_tb = gr.Textbox(value="", label="Note", lines=2)
                 path_state = gr.State(value="")
-                approve_btn = gr.Button("Approve")
-                reject_btn = gr.Button("Reject")
+                # action buttons
                 use_img2img_btn = gr.Button("Use in Image to Image")
                 use_var_btn = gr.Button("Use in Image Variations")
-                clear_btn = gr.Button("Clear")
+                regen_btn = gr.Button("Regenerate")
+                show_json_btn = gr.Button("Show JSON")
 
                 image_slots.append(img)
                 name_slots.append(name_tb)
                 mtime_slots.append(mtime_tb)
                 prompt_slots.append(prompt_tb)
                 model_slots.append(model_tb)
-                status_slots.append(status_radio)
-                note_slots.append(note_tb)
                 path_states.append(path_state)
-
-                def _approve(path, note_text):
-                    # call backend API to set review
-                    if not path:
-                        return "pending", note_text, "(no file)"
-                    name = os.path.basename(path)
-                    _api_post(f"/api/results/{urllib.parse.quote(name)}/review", {"status": "approved", "note": note_text})
-                    return "approved", note_text, f"Approved {name}"
-
-                def _reject(path, note_text):
-                    if not path:
-                        return "pending", note_text, "(no file)"
-                    name = os.path.basename(path)
-                    _api_post(f"/api/results/{urllib.parse.quote(name)}/review", {"status": "rejected", "note": note_text})
-                    return "rejected", note_text, f"Rejected {name}"
-
-                def _clear_row(path):
-                    if not path:
-                        return "pending", "", "(no file)"
-                    name = os.path.basename(path)
-                    _api_delete(f"/api/results/{urllib.parse.quote(name)}/review")
-                    return "pending", "", f"Cleared {name}"
 
                 def _use_img2img(path):
                     try:
-                        # use backend-served URL so Gradio can load it anywhere
                         name = os.path.basename(path)
                         url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(name)}"
                         pil = Image.open(url).convert("RGB")
                         app_settings.settings.lcm_diffusion_setting.init_image = pil
                         return f"Set {name} as init image"
                     except Exception:
-                        # fallback: try local path
                         try:
                             pil = Image.open(path).convert("RGB")
                             app_settings.settings.lcm_diffusion_setting.init_image = pil
@@ -163,11 +133,44 @@ def get_results_review_ui():
                         except Exception:
                             return "(failed)"
 
-                approve_btn.click(fn=_approve, inputs=[path_state, note_tb], outputs=[status_radio, note_tb, status_area])
-                reject_btn.click(fn=_reject, inputs=[path_state, note_tb], outputs=[status_radio, note_tb, status_area])
-                clear_btn.click(fn=_clear_row, inputs=[path_state], outputs=[status_radio, note_tb, status_area])
+                def _show_json(path):
+                    if not path:
+                        return "(no file)", ""
+                    name = os.path.basename(path)
+                    json_url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(os.path.splitext(name)[0] + '.json')}"
+                    try:
+                        with urllib.request.urlopen(json_url, timeout=2) as f:
+                            data = json.load(f)
+                            pretty = json.dumps(data, indent=2)
+                            return f"Loaded JSON for {name}", f"```\n{pretty}\n```"
+                    except Exception as e:
+                        return f"failed to load json: {e}", ""
+
+                def _regenerate(path):
+                    if not path:
+                        return "(no file)"
+                    name = os.path.basename(path)
+                    json_url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(os.path.splitext(name)[0] + '.json')}"
+                    payload = None
+                    try:
+                        with urllib.request.urlopen(json_url, timeout=2) as f:
+                            payload = json.load(f)
+                    except Exception:
+                        payload = None
+
+                    if not payload:
+                        # try to construct minimal payload
+                        payload = {"prompt": "", "diffusion_task": "text_to_image"}
+                    # enqueue
+                    resp = _api_post("/api/queue", payload)
+                    if resp and resp.get("job_id"):
+                        return f"Enqueued regenerate job {resp.get('job_id')}"
+                    return "failed to enqueue regenerate"
+
                 use_img2img_btn.click(fn=_use_img2img, inputs=[path_state], outputs=[status_area])
                 use_var_btn.click(fn=_use_variations, inputs=[path_state], outputs=[status_area])
+                show_json_btn.click(fn=_show_json, inputs=[path_state], outputs=[status_area, status_area])
+                regen_btn.click(fn=_regenerate, inputs=[path_state], outputs=[status_area])
 
         def _populate_page(page_index: int):
             payload = _api_get("/api/results/paged", {"page": page_index, "size": PAGE_SIZE})
