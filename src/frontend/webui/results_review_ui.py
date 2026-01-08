@@ -4,13 +4,47 @@ import json
 import gradio as gr
 from PIL import Image
 from state import get_settings
-from backend.reviews_db import get_review, set_review, delete_review, init_db
+import urllib.request
+import urllib.parse
+import os
+
+API_BASE = os.environ.get("API_URL", "http://127.0.0.1:8000")
+
+def _api_get(path: str, params: dict = None):
+    url = API_BASE.rstrip("/") + path
+    if params:
+        url = url + "?" + urllib.parse.urlencode(params)
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            return json.load(resp)
+    except Exception:
+        return None
+
+def _api_post(path: str, data: dict):
+    url = API_BASE.rstrip("/") + path
+    body = json.dumps(data).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.load(resp)
+    except Exception:
+        return None
+
+def _api_delete(path: str):
+    url = API_BASE.rstrip("/") + path
+    req = urllib.request.Request(url, method="DELETE")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.load(resp)
+    except Exception:
+        return None
 
 
 app_settings = get_settings()
 
 
 def _list_results_paths():
+    # not used when API-backed; kept for fallback
     path = app_settings.settings.generated_images.path
     if not path:
         from paths import FastStableDiffusionPaths
@@ -74,42 +108,60 @@ def get_results_review_ui():
                 path_states.append(path_state)
 
                 def _approve(path, note_text):
+                    # call backend API to set review
+                    if not path:
+                        return "pending", note_text, "(no file)"
                     name = os.path.basename(path)
-                    dbp = os.path.join(os.path.dirname(path), "reviews.db")
-                    init_db(dbp)
-                    set_review(dbp, name, "approved", note_text)
+                    _api_post(f"/api/results/{urllib.parse.quote(name)}/review", {"status": "approved", "note": note_text})
                     return "approved", note_text, f"Approved {name}"
 
                 def _reject(path, note_text):
+                    if not path:
+                        return "pending", note_text, "(no file)"
                     name = os.path.basename(path)
-                    dbp = os.path.join(os.path.dirname(path), "reviews.db")
-                    init_db(dbp)
-                    set_review(dbp, name, "rejected", note_text)
+                    _api_post(f"/api/results/{urllib.parse.quote(name)}/review", {"status": "rejected", "note": note_text})
                     return "rejected", note_text, f"Rejected {name}"
 
                 def _clear_row(path):
+                    if not path:
+                        return "pending", "", "(no file)"
                     name = os.path.basename(path)
-                    dbp = os.path.join(os.path.dirname(path), "reviews.db")
-                    init_db(dbp)
-                    delete_review(dbp, name)
+                    _api_delete(f"/api/results/{urllib.parse.quote(name)}/review")
                     return "pending", "", f"Cleared {name}"
 
                 def _use_img2img(path):
                     try:
-                        pil = Image.open(path).convert("RGB")
+                        # use backend-served URL so Gradio can load it anywhere
+                        name = os.path.basename(path)
+                        url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(name)}"
+                        pil = Image.open(url).convert("RGB")
                         app_settings.settings.lcm_diffusion_setting.init_image = pil
-                        return f"Set {os.path.basename(path)} as init image"
+                        return f"Set {name} as init image"
                     except Exception:
-                        return "(failed to load image)"
+                        # fallback: try local path
+                        try:
+                            pil = Image.open(path).convert("RGB")
+                            app_settings.settings.lcm_diffusion_setting.init_image = pil
+                            return f"Set {os.path.basename(path)} as init image"
+                        except Exception:
+                            return "(failed to load image)"
 
                 def _use_variations(path):
                     try:
-                        pil = Image.open(path).convert("RGB")
+                        name = os.path.basename(path)
+                        url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(name)}"
+                        pil = Image.open(url).convert("RGB")
                         app_settings.settings.lcm_diffusion_setting.init_image = pil
                         app_settings.settings.lcm_diffusion_setting.diffusion_task = "image_variations"
-                        return f"Set {os.path.basename(path)} for variations"
+                        return f"Set {name} for variations"
                     except Exception:
-                        return "(failed)"
+                        try:
+                            pil = Image.open(path).convert("RGB")
+                            app_settings.settings.lcm_diffusion_setting.init_image = pil
+                            app_settings.settings.lcm_diffusion_setting.diffusion_task = "image_variations"
+                            return f"Set {os.path.basename(path)} for variations"
+                        except Exception:
+                            return "(failed)"
 
                 approve_btn.click(fn=_approve, inputs=[path_state, note_tb], outputs=[status_radio, note_tb, status_area])
                 reject_btn.click(fn=_reject, inputs=[path_state, note_tb], outputs=[status_radio, note_tb, status_area])
@@ -118,40 +170,43 @@ def get_results_review_ui():
                 use_var_btn.click(fn=_use_variations, inputs=[path_state], outputs=[status_area])
 
         def _populate_page(page_index: int):
-            paths = _list_results_paths()
-            total = len(paths)
-            start = page_index * PAGE_SIZE
+            payload = _api_get("/api/results/paged", {"page": page_index, "size": PAGE_SIZE})
+            if not payload:
+                # fallback to local listing
+                paths = _list_results_paths()
+                total = len(paths)
+                start = page_index * PAGE_SIZE
+                page_paths = paths[start : start + PAGE_SIZE]
+                # build out_values using minimal info
+                out = [page_index]
+                for i in range(PAGE_SIZE):
+                    if i < len(page_paths):
+                        p = page_paths[i]
+                        name = os.path.basename(p)
+                        stat = os.stat(p)
+                        m = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime))
+                        out.extend([p, name, m, "", "", "pending", "", p])
+                    else:
+                        out.extend([None, "", "", "", "", "pending", "", ""])
+                return (page_paths,) + tuple(out)
+
             page_paths = []
-            out_values = [page_index]
-            # for each slot, compute outputs
+            out = [page_index]
             for i in range(PAGE_SIZE):
-                idx = start + i
-                if idx < total:
-                    p = paths[idx]
-                    page_paths.append(p)
-                    name = os.path.basename(p)
-                    stat = os.stat(p)
-                    m = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime))
-                    json_path = os.path.join(os.path.dirname(p), os.path.splitext(name)[0] + ".json")
-                    prompt_val = ""
-                    model_val = ""
-                    if os.path.exists(json_path):
-                        try:
-                            with open(json_path, "r", encoding="utf-8") as f:
-                                data = json.load(f)
-                                prompt_val = data.get("prompt", "")
-                                model_val = data.get("model", "") or data.get("openvino_model", "")
-                        except Exception:
-                            pass
-                    db_path = os.path.join(os.path.dirname(p), "reviews.db")
-                    init_db(db_path)
-                    entry = get_review(db_path, name)
-                    status_val = entry.get("status") if entry else "pending"
-                    note_val = entry.get("note") if entry else ""
-                    out_values.extend([p, name, m, prompt_val, model_val, status_val, note_val, p])
+                if i < len(payload.get("results", [])):
+                    item = payload["results"][i]
+                    name = item.get("name")
+                    url = API_BASE.rstrip("/") + item.get("url")
+                    mtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(item.get("mtime", 0)))
+                    prompt_val = item.get("meta", {}).get("prompt", "")
+                    model_val = item.get("meta", {}).get("model", "") or item.get("meta", {}).get("openvino_model", "")
+                    status_val = item.get("review", {}).get("status") if item.get("review") else "pending"
+                    note_val = item.get("review", {}).get("note") if item.get("review") else ""
+                    page_paths.append(url)
+                    out.extend([url, name, mtime, prompt_val, model_val, status_val, note_val, url])
                 else:
-                    out_values.extend([None, "", "", "", "", "pending", "", ""]) 
-            return (page_paths, ) + tuple(out_values)
+                    out.extend([None, "", "", "", "", "pending", "", ""]) 
+            return (page_paths,) + tuple(out)
 
         def _prev(page_index: int):
             new_page = max(0, page_index - 1)

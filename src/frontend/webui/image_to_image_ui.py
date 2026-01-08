@@ -32,7 +32,11 @@ def generate_image_to_image(
 
     app_settings.settings.lcm_diffusion_setting.prompt = prompt
     app_settings.settings.lcm_diffusion_setting.negative_prompt = negative_prompt
-    app_settings.settings.lcm_diffusion_setting.init_image = init_image
+    # If the UI did not provide an init_image, fall back to any pre-set image
+    if init_image is None:
+        init_image = app_settings.settings.lcm_diffusion_setting.init_image
+    else:
+        app_settings.settings.lcm_diffusion_setting.init_image = init_image
     app_settings.settings.lcm_diffusion_setting.strength = strength
 
     app_settings.settings.lcm_diffusion_setting.diffusion_task = (

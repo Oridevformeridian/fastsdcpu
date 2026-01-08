@@ -181,6 +181,81 @@ async def list_results():
 
 
 @app.get(
+    "/api/results/paged",
+    description="List generated result files (paginated)",
+    summary="List generated results (paged)",
+)
+async def list_results_paged(page: int = 0, size: int = 20):
+    """Return paginated results. Uses a small in-memory cache with TTL and directory-mtime invalidation."""
+    path = app_settings.settings.generated_images.path
+    if not path:
+        path = FastStableDiffusionPaths.get_results_path()
+
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Results directory not found")
+
+    # init cache on app
+    if not hasattr(app, "_results_cache"):
+        app._results_cache = {"dir_mtime": 0, "timestamp": 0.0, "ttl": 3.0, "pages": {}}
+
+    cache = app._results_cache
+    dir_mtime = os.stat(path).st_mtime
+
+    # invalidate cache if directory changed
+    if cache.get("dir_mtime") != dir_mtime:
+        cache["dir_mtime"] = dir_mtime
+        cache["pages"].clear()
+
+    key = f"{page}:{size}"
+    now = time.time()
+    entry = cache["pages"].get(key)
+    if entry and (now - entry["timestamp"] < cache["ttl"]):
+        return entry["data"]
+
+    # build listing for this page
+    all_entries = [e for e in os.listdir(path) if os.path.isfile(os.path.join(path, e))]
+    all_entries.sort(key=lambda e: os.stat(os.path.join(path, e)).st_mtime, reverse=True)
+
+    start = page * size
+    end = start + size
+    page_entries = all_entries[start:end]
+
+    # load reviews and sidecar JSON for each page entry
+    db_file = os.path.join(path, "reviews.db")
+    init_db(db_file)
+
+    results = []
+    for entry_name in page_entries:
+        full = os.path.join(path, entry_name)
+        stat = os.stat(full)
+        file_review = get_review(db_file, entry_name)
+        meta = {}
+        json_path = os.path.join(path, os.path.splitext(entry_name)[0] + ".json")
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+            except Exception:
+                meta = {}
+
+        results.append(
+            {
+                "name": entry_name,
+                "url": f"/results/{entry_name}",
+                "size": stat.st_size,
+                "mtime": stat.st_mtime,
+                "meta": meta,
+                "review": file_review,
+            }
+        )
+
+    payload = {"page": page, "size": size, "results": results, "total": len(all_entries)}
+    cache["pages"][key] = {"timestamp": now, "data": payload}
+    return payload
+
+
+
+@app.get(
     "/api/results/{name}/review",
     description="Get review metadata for a generated result",
     summary="Get review metadata",
