@@ -177,18 +177,14 @@ def get_queue_ui():
                 f"- created: {_fmt(j.get('created_at'))}  \n"
                 f"- started: {_fmt(j.get('started_at'))}  \n"
                 f"- finished: {_fmt(j.get('finished_at'))}  \n"
-        rerun_btn.click(fn=_rerun, inputs=[job_id_input], outputs=[status])
-        details_btn.click(fn=_details, inputs=[job_id_input], outputs=[status, details_area])
-        download_btn.click(fn=_download_payload, inputs=[job_id_input], outputs=[status, download_file])
-        
-        # Auto-refresh on tab load
-        queue_block.load(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display])
-        
-        # Auto-refresh every 3 seconds via timer (updates current job timer too)
-        timer.tick(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display])
-        
-        # Refresh when filter checkbox changes
-        show_completed.change(fn=_refresh, inputs=[show_completed]
+                f"- result: {j.get('result') or ''}  \n"
+            )
+            return f"Loaded job {job_id}", text
+
+        def _download_payload(job_id):
+            if not job_id:
+                return "No job id provided", None
+            try:
                 url = f"{API_BASE}/api/queue/{int(job_id)}/payload"
                 req = urllib.request.Request(url)
                 with urllib.request.urlopen(req, timeout=10) as resp:
@@ -203,13 +199,17 @@ def get_queue_ui():
                 return f"Failed to download payload: {e}", None
 
         cancel_btn.click(fn=_cancel, inputs=[job_id_input], outputs=[status])
+        rerun_btn.click(fn=_rerun, inputs=[job_id_input], outputs=[status])
         details_btn.click(fn=_details, inputs=[job_id_input], outputs=[status, details_area])
         download_btn.click(fn=_download_payload, inputs=[job_id_input], outputs=[status, download_file])
         
         # Auto-refresh on tab load
-        queue_block.load(fn=_refresh, inputs=None, outputs=[table, status, current_job_display])
+        queue_block.load(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display])
         
         # Auto-refresh every 3 seconds via timer (updates current job timer too)
-        timer.tick(fn=_refresh, inputs=None, outputs=[table, status, current_job_display])
+        timer.tick(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display])
+        
+        # Refresh when filter checkbox changes
+        show_completed.change(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display])
     
     return queue_block
