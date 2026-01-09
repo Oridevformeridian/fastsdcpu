@@ -51,18 +51,30 @@ def get_queue_ui():
         with gr.Row():
             current_job_display = gr.Markdown("### Current Job: None", elem_id="current-job-status")
         
+        # Action buttons and filters at the top
         with gr.Row():
-            job_id_input = gr.Number(value=None, label="Job ID", precision=0)
-            cancel_btn = gr.Button("Cancel")
-            rerun_btn = gr.Button("♻️ Rerun")
-            details_btn = gr.Button("Details")
-            download_btn = gr.Button("Download Payload JSON")
+            with gr.Column(scale=4):
+                with gr.Row():
+                    cancel_btn = gr.Button("🚫 Cancel", size="sm")
+                    rerun_btn = gr.Button("♻️ Rerun", size="sm")
+                    details_btn = gr.Button("📋 Details", size="sm")
+                    download_btn = gr.Button("💾 Download Payload", size="sm")
+            with gr.Column(scale=1):
+                job_id_input = gr.Number(value=None, label="Job ID", precision=0, scale=0)
         
         with gr.Row():
             show_completed = gr.Checkbox(label="Show Completed/Failed Jobs", value=True)
         
         status = gr.Markdown("")
-        table = gr.Dataframe(headers=["id", "status", "created_at", "started_at", "finished_at", "result"], datatype=["number","str","str","str","str","str"], interactive=False)
+        
+        # Queue table with interactive checkboxes
+        table = gr.Dataframe(
+            headers=["select", "id", "status", "created_at", "started_at", "finished_at", "result"], 
+            datatype=["bool", "number", "str", "str", "str", "str", "str"], 
+            interactive=True,
+            col_count=(7, "fixed")
+        )
+        
         details_area = gr.Markdown("")
         download_file = gr.File(label="Downloaded Payload", visible=True)
         
@@ -124,6 +136,7 @@ def get_queue_ui():
                     continue
                     
                 rows.append([
+                    False,  # checkbox column (unchecked by default)
                     j.get("id"),
                     job_status,
                     _fmt(j.get("created_at")),

@@ -36,4 +36,3 @@ def get_files_in_dir(root_dir: str) -> List:
         if file.endswith((".gguf", ".safetensors")):
             models.append(path.join(root_dir, file))
     return models
-# Test comment
