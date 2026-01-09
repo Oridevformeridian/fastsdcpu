@@ -3,7 +3,10 @@ import os
 import sqlite3
 import logging
 import traceback
+import gc
+import sys
 
+import psutil
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,6 +65,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 context = Context(InterfaceType.API_SERVER)
+
+# Log system resources at startup
+try:
+    vm = psutil.virtual_memory()
+    print(f"System Memory: {vm.total / 1024**3:.1f}GB total, {vm.available / 1024**3:.1f}GB available ({100 - vm.percent:.1f}% free)")
+    if vm.available < 1024**3:  # Less than 1GB
+        print("⚠️  WARNING: Less than 1GB of RAM available - may experience stability issues")
+except Exception:
+    pass
 
 # Mount static files for results (images and JSON)
 results_path = app_settings.settings.generated_images.path
@@ -402,6 +414,10 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
         path = FastStableDiffusionPaths.get_results_path()
     db_file = os.path.join(path, "queue.db")
     init_queue_db(db_file)
+    
+    # Log initial memory state
+    _log_memory_stats(phase="worker_startup")
+    
     # Clean up any orphaned 'running' jobs from previous container runs
     orphaned_count = reset_orphaned_jobs(db_file)
     if orphaned_count > 0:
@@ -422,6 +438,8 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
             retry_count = job.get("retry_count", 0)
             retry_note = f" (retry #{retry_count})" if retry_count > 0 else ""
             print(f"Processing job {job_id}{retry_note}")
+            
+            _log_memory_stats(job_id, "job_start")
             
             update_job_progress(db_file, job_id, {"phase": "validating", "timestamp": time.time()})
             
@@ -454,6 +472,8 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
                 "timestamp": time.time()
             })
             
+            _log_memory_stats(job_id, "before_model_load")
+            
             try:
                 app_settings.settings.lcm_diffusion_setting = diffusion_config
                 if diffusion_config.diffusion_task == DiffusionTask.image_to_image:
@@ -471,7 +491,11 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
                     "timestamp": time.time()
                 })
                 
+                _log_memory_stats(job_id, "before_generation")
+                
                 images = context.generate_text_to_image(app_settings.settings)
+                
+                _log_memory_stats(job_id, "after_generation")
                 
                 if images is None:
                     error_msg = context.error or "Image generation returned None"
@@ -480,10 +504,20 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
                     time.sleep(0.1)
                     continue
                 
+            except MemoryError as e:
+                error_msg = f"OUT OF MEMORY during generation: {str(e)}"
+                logging.error(f"Job {job_id}: {error_msg}")
+                _log_memory_stats(job_id, "memory_error")
+                fail_job(db_file, job_id, error_msg)
+                # Force garbage collection
+                gc.collect()
+                time.sleep(1.0)  # Wait longer after OOM
+                continue
             except Exception as e:
                 error_msg = f"Image generation exception: {str(e)}"
                 logging.error(f"Job {job_id}: {error_msg}")
                 logging.error(f"Job {job_id}: Full traceback:\n{traceback.format_exc()}")
+                _log_memory_stats(job_id, "exception")
                 fail_job(db_file, job_id, error_msg)
                 time.sleep(0.1)
                 continue
@@ -505,6 +539,8 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
                 saved = context.save_images(images, app_settings.settings)
                 print(f"Job {job_id}: Saved {len(saved) if saved else 0} images")
                 
+                _log_memory_stats(job_id, "after_save")
+                
                 # Final check before marking complete
                 current_job = get_job(db_file, job_id)
                 if current_job and current_job.get("status") == "cancelled":
@@ -515,10 +551,15 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
                 complete_job(db_file, job_id, {"saved": saved, "latency": context.latency})
                 print(f"Job {job_id}: Completed successfully")
                 
+                # Clean up image references and force GC after successful job
+                images = None
+                gc.collect()
+                
             except Exception as e:
                 error_msg = f"Failed to save images: {str(e)}"
                 logging.error(f"Job {job_id}: {error_msg}")
                 logging.error(f"Job {job_id}: Full traceback:\n{traceback.format_exc()}")
+                _log_memory_stats(job_id, "save_exception")
                 fail_job(db_file, job_id, error_msg)
             
             # Sleep briefly after processing to prevent tight loop
@@ -529,6 +570,7 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
             logging.exception(error_msg)
             print(f"CRITICAL: {error_msg}")
             print(f"Full traceback:\n{traceback.format_exc()}")
+            _log_memory_stats(job_id, "critical_error")
             
             try:
                 if job_id:
@@ -537,6 +579,8 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
             except Exception as e2:
                 logging.error(f"Failed to mark job as failed: {e2}")
             
+            # Force cleanup after critical error
+            gc.collect()
             # Sleep longer after critical errors to prevent rapid failures
             time.sleep(poll_interval * 2)
 

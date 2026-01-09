@@ -109,6 +109,7 @@ def get_queue_ui():
             
             # Calculate elapsed time
             elapsed = ""
+            elapsed_seconds = 0
             if started_at:
                 try:
                     elapsed_seconds = int(time.time() - float(started_at))
@@ -117,6 +118,29 @@ def get_queue_ui():
                     elapsed = f"{minutes}m {seconds}s"
                 except Exception:
                     elapsed = "unknown"
+            
+            # Calculate average completion time from last 5 done jobs
+            estimated_total = ""
+            try:
+                done_payload = _api_get("/api/queue", params={"status": "done"})
+                if done_payload and done_payload.get("jobs"):
+                    done_jobs = done_payload.get("jobs", [])[:5]  # Last 5 done jobs
+                    durations = []
+                    for dj in done_jobs:
+                        start = dj.get("started_at")
+                        finish = dj.get("finished_at")
+                        if start and finish:
+                            duration = float(finish) - float(start)
+                            if duration > 0:
+                                durations.append(duration)
+                    
+                    if durations:
+                        avg_duration = int(sum(durations) / len(durations))
+                        est_minutes = avg_duration // 60
+                        est_seconds = avg_duration % 60
+                        estimated_total = f" / {est_minutes}m {est_seconds}s"
+            except Exception:
+                pass  # If we can't calculate, just don't show estimate
             
             # Get job details
             try:
@@ -129,12 +153,12 @@ def get_queue_ui():
                 
                 status_text = (
                     f"### Current Job: #{job_id}\n"
-                    f"**Type:** {job_type} | **Running for:** {elapsed}\n\n"
+                    f"**Type:** {job_type} | **Running for:** {elapsed}{estimated_total}\n\n"
                     f"**Prompt:** {prompt}"
                 )
                 return status_text
             except Exception:
-                return f"### Current Job: #{job_id} (Running for {elapsed})"
+                return f"### Current Job: #{job_id} (Running for {elapsed}{estimated_total})"
 
         def _refresh(show_completed_filter=True):
             # Check if we were disconnected before making the API call
