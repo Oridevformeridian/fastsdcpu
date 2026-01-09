@@ -337,6 +337,41 @@ async def list_queue_api(status: str = None):
 
 
 @app.get(
+    "/api/queue/pause",
+    description="Get queue pause state",
+    summary="Get pause state",
+)
+async def get_queue_pause_state_api():
+    """Get whether the queue is paused."""
+    path = app_settings.settings.generated_images.path
+    if not path:
+        path = FastStableDiffusionPaths.get_results_path()
+    db_file = os.path.join(path, "queue.db")
+    init_queue_db(db_file)
+    paused = is_queue_paused(db_file)
+    return {"paused": paused}
+
+
+@app.post(
+    "/api/queue/pause",
+    description="Toggle queue pause state",
+    summary="Toggle pause",
+)
+async def toggle_queue_pause_api():
+    """Toggle queue pause state. Returns new state."""
+    path = app_settings.settings.generated_images.path
+    if not path:
+        path = FastStableDiffusionPaths.get_results_path()
+    db_file = os.path.join(path, "queue.db")
+    init_queue_db(db_file)
+    current = is_queue_paused(db_file)
+    new_state = not current
+    set_queue_paused(db_file, new_state)
+    action = "paused" if new_state else "resumed"
+    return {"paused": new_state, "message": f"Queue {action}"}
+
+
+@app.get(
     "/api/queue/{job_id}",
     description="Get queue job details",
     summary="Get job",
@@ -383,41 +418,6 @@ async def cancel_queue_job_api(job_id: int):
         raise HTTPException(status_code=500, detail="Failed to cancel job")
     
     return {"job_id": job_id, "status": "cancelled", "message": f"Job #{job_id} cancelled"}
-
-
-@app.get(
-    "/api/queue/pause",
-    description="Get queue pause state",
-    summary="Get pause state",
-)
-async def get_queue_pause_state_api():
-    """Get whether the queue is paused."""
-    path = app_settings.settings.generated_images.path
-    if not path:
-        path = FastStableDiffusionPaths.get_results_path()
-    db_file = os.path.join(path, "queue.db")
-    init_queue_db(db_file)
-    paused = is_queue_paused(db_file)
-    return {"paused": paused}
-
-
-@app.post(
-    "/api/queue/pause",
-    description="Toggle queue pause state",
-    summary="Toggle pause",
-)
-async def toggle_queue_pause_api():
-    """Toggle queue pause state. Returns new state."""
-    path = app_settings.settings.generated_images.path
-    if not path:
-        path = FastStableDiffusionPaths.get_results_path()
-    db_file = os.path.join(path, "queue.db")
-    init_queue_db(db_file)
-    current = is_queue_paused(db_file)
-    new_state = not current
-    set_queue_paused(db_file, new_state)
-    action = "paused" if new_state else "resumed"
-    return {"paused": new_state, "message": f"Queue {action}"}
 
 
 @app.get(
