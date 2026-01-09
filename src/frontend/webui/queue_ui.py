@@ -47,6 +47,10 @@ def _fmt(ts):
 
 def get_queue_ui():
     with gr.Blocks() as queue_block:
+        # Current job status display
+        with gr.Row():
+            current_job_display = gr.Markdown("### Current Job: None", elem_id="current-job-status")
+        
         with gr.Row():
             job_id_input = gr.Number(value=None, label="Job ID", precision=0)
             cancel_btn = gr.Button("Cancel")
@@ -60,10 +64,53 @@ def get_queue_ui():
         # Hidden timer for auto-refresh every 3 seconds
         timer = gr.Timer(value=3, active=True)
 
+        def _get_current_job_status():
+            """Fetch and format the current running job"""
+            payload = _api_get("/api/queue", params={"status": "running"})
+            if not payload or not payload.get("jobs"):
+                return "### Current Job: None"
+            
+            jobs = payload.get("jobs", [])
+            if not jobs:
+                return "### Current Job: None"
+            
+            job = jobs[0]  # Get the first running job
+            job_id = job.get("id")
+            started_at = job.get("started_at")
+            
+            # Calculate elapsed time
+            elapsed = ""
+            if started_at:
+                try:
+                    elapsed_seconds = int(time.time() - float(started_at))
+                    minutes = elapsed_seconds // 60
+                    seconds = elapsed_seconds % 60
+                    elapsed = f"{minutes}m {seconds}s"
+                except Exception:
+                    elapsed = "unknown"
+            
+            # Get job details
+            try:
+                job_payload = json.loads(job.get("payload", "{}"))
+                job_type = job_payload.get("diffusion_task", "unknown").replace("_", " ").title()
+                prompt = job_payload.get("prompt", "")
+                # Truncate long prompts
+                if len(prompt) > 100:
+                    prompt = prompt[:100] + "..."
+                
+                status_text = (
+                    f"### Current Job: #{job_id}\n"
+                    f"**Type:** {job_type} | **Running for:** {elapsed}\n\n"
+                    f"**Prompt:** {prompt}"
+                )
+                return status_text
+            except Exception:
+                return f"### Current Job: #{job_id} (Running for {elapsed})"
+
         def _refresh():
             payload = _api_get("/api/queue")
             if not payload:
-                return [], "(failed to fetch queue)"
+                return [], "(failed to fetch queue)", _get_current_job_status()
             rows = []
             for j in payload.get("jobs", []):
                 rows.append([
@@ -74,13 +121,13 @@ def get_queue_ui():
                     _fmt(j.get("finished_at")),
                     (j.get("result") or "")[:200],
                 ])
-            return rows, f"Loaded {len(rows)} jobs"
+            return rows, f"Loaded {len(rows)} jobs", _get_current_job_status()
 
         def _cancel(job_id):
-            if not job_id:
-                return "No job id provided"
-            resp = _api_post(f"/api/queue/{int(job_id)}/cancel", {})
-            if not resp:
+            if not job_id:, current_job_display])
+        
+        # Auto-refresh every 3 seconds via timer (updates current job timer too)
+        timer.tick(fn=_refresh, inputs=None, outputs=[table, status, current_job_display
                 return "Cancel failed"
             return f"Cancelled {job_id}"
 
