@@ -5,8 +5,10 @@ import urllib.request
 import urllib.parse
 import gradio as gr
 from state import get_settings
+from frontend.webui.connection_manager import get_connection_state
 
 API_BASE = os.environ.get("API_URL", "http://127.0.0.1:8000")  # default to API server
+conn_state = get_connection_state()
 
 
 def _api_get(path: str, params: dict = None):
@@ -17,8 +19,11 @@ def _api_get(path: str, params: dict = None):
         url = url + "?" + urllib.parse.urlencode(params)
     try:
         with urllib.request.urlopen(url, timeout=5) as resp:
-            return json.load(resp)
+            result = json.load(resp)
+            conn_state.mark_connected()
+            return result
     except Exception:
+        conn_state.mark_disconnected()
         return None
 
 
@@ -28,8 +33,11 @@ def _api_post(path: str, data: dict):
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
-            return json.load(resp)
+            result = json.load(resp)
+            conn_state.mark_connected()
+            return result
     except Exception:
+        conn_state.mark_disconnected()
         return None
 
 
