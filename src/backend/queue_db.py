@@ -21,6 +21,15 @@ def init_db(db_path: str):
         )
         """
     )
+    
+    # Migration: Add payload_json_path column if it doesn't exist
+    try:
+        cur.execute("SELECT payload_json_path FROM queue LIMIT 1")
+    except sqlite3.OperationalError:
+        # Column doesn't exist, add it
+        print("Migrating queue database: adding payload_json_path column")
+        cur.execute("ALTER TABLE queue ADD COLUMN payload_json_path TEXT")
+    
     conn.commit()
     conn.close()
 
