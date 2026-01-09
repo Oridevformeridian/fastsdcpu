@@ -97,17 +97,23 @@ def get_results_review_ui():
 
         for i in range(PAGE_SIZE):
             with gr.Row(variant="panel"):
-                img = gr.Image(value=None, type="filepath", interactive=False)
-                name_tb = gr.Textbox(value="", label="File", interactive=False)
-                mtime_tb = gr.Textbox(value="", label="Modified", interactive=False)
-                prompt_tb = gr.Textbox(value="", label="Prompt", interactive=False, lines=2)
-                model_tb = gr.Textbox(value="", label="Model", interactive=False)
-                path_state = gr.State(value="")
-                # action buttons
-                use_img2img_btn = gr.Button("Use in Image to Image")
-                use_var_btn = gr.Button("Use in Image Variations")
-                regen_btn = gr.Button("Regenerate")
-                show_json_btn = gr.Button("Show JSON")
+                with gr.Column(scale=2):
+                    img = gr.Image(value=None, type="filepath", interactive=False, height=300)
+                
+                with gr.Column(scale=3):
+                    name_tb = gr.Textbox(value="", label="File", interactive=False)
+                    mtime_tb = gr.Textbox(value="", label="Modified", interactive=False)
+                    prompt_tb = gr.Textbox(value="", label="Prompt", interactive=False, lines=3)
+                    model_tb = gr.Textbox(value="", label="Model", interactive=False)
+                    
+                    # Compact action buttons row
+                    with gr.Row():
+                        use_img2img_btn = gr.Button("📷 Img2Img", size="sm", scale=1)
+                        use_var_btn = gr.Button("🔄 Variations", size="sm", scale=1)
+                        regen_btn = gr.Button("♻️ Regen", size="sm", scale=1)
+                        show_json_btn = gr.Button("{ } JSON", size="sm", scale=1)
+                    
+                    path_state = gr.State(value="")
 
                 image_slots.append(img)
                 name_slots.append(name_tb)
