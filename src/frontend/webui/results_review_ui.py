@@ -78,7 +78,12 @@ def _list_results_paths():
 def get_results_review_ui():
     PAGE_SIZE = 6
 
-    with gr.Blocks() as results_block:
+    with gr.Blocks(css="""
+        @media (min-width: 768px) {
+            #results-gallery-desktop-hide { display: none !important; }
+        }
+        .download-image-btn { cursor: pointer; }
+    """) as results_block:
         # Top navigation with filter
         with gr.Row():
             prev_btn_top = gr.Button("←", scale=0, min_width=50)
@@ -86,8 +91,8 @@ def get_results_review_ui():
             next_btn_top = gr.Button("→", scale=0, min_width=50)
             show_failed = gr.Checkbox(label="Show Failed Images", value=True)
             
-        # Preview gallery at top
-        files_gallery = gr.Gallery(label="Generated results", columns=3, height=240)
+        # Preview gallery at top (hidden on desktop)
+        files_gallery = gr.Gallery(label="Generated results", columns=3, height=240, elem_id="results-gallery-desktop-hide")
         
         status_area = gr.Markdown("")
         page_state = gr.State(value=0)
@@ -106,7 +111,8 @@ def get_results_review_ui():
         for i in range(PAGE_SIZE):
             with gr.Row(variant="panel"):
                 with gr.Column(scale=2):
-                    img = gr.Image(value=None, type="filepath", interactive=False, height=300)
+                    # Image as download button
+                    img = gr.Image(value=None, type="filepath", interactive=False, height=300, show_download_button=True, show_label=False)
                 
                 with gr.Column(scale=3):
                     name_tb = gr.Textbox(value="", label="File", interactive=False)
