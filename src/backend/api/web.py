@@ -371,6 +371,41 @@ async def cancel_queue_job_api(job_id: int):
 
 
 @app.get(
+    "/api/queue/pause",
+    description="Get queue pause state",
+    summary="Get pause state",
+)
+async def get_queue_pause_state_api():
+    """Get whether the queue is paused."""
+    path = app_settings.settings.generated_images.path
+    if not path:
+        path = FastStableDiffusionPaths.get_results_path()
+    db_file = os.path.join(path, "queue.db")
+    init_queue_db(db_file)
+    paused = is_queue_paused(db_file)
+    return {"paused": paused}
+
+
+@app.post(
+    "/api/queue/pause",
+    description="Toggle queue pause state",
+    summary="Toggle pause",
+)
+async def toggle_queue_pause_api():
+    """Toggle queue pause state. Returns new state."""
+    path = app_settings.settings.generated_images.path
+    if not path:
+        path = FastStableDiffusionPaths.get_results_path()
+    db_file = os.path.join(path, "queue.db")
+    init_queue_db(db_file)
+    current = is_queue_paused(db_file)
+    new_state = not current
+    set_queue_paused(db_file, new_state)
+    action = "paused" if new_state else "resumed"
+    return {"paused": new_state, "message": f"Queue {action}"}
+
+
+@app.get(
     "/api/queue/{job_id}/payload",
     description="Download the payload JSON for a queue job",
     summary="Download job payload",
