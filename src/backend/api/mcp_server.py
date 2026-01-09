@@ -6,7 +6,8 @@ from backend.device import get_device_name
 from backend.models.device import DeviceInfo
 from constants import APP_VERSION, DEVICE
 from context import Context
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi_mcp import FastApiMCP
 from state import get_settings
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,6 +37,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Global exception handler to prevent server crashes"""
+    logging.exception(f"Unhandled exception in {request.url.path}: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"error": str(exc), "detail": "Internal server error"}
+    )
 
 context = Context(InterfaceType.API_SERVER)
 app.mount("/results", StaticFiles(directory="results"), name="results")
@@ -71,16 +81,30 @@ async def generate(
     """
     Returns URL of the generated image for text prompt
     """
-    app_settings.settings.lcm_diffusion_setting.prompt = prompt
-    images = context.generate_text_to_image(app_settings.settings)
-    image_names = context.save_images(
-        images,
-        app_settings.settings,
-    )
-    # url = request.url_for("results", path=image_names[0]) - Claude Desktop returns api_server
-    url = f"http://localhost:{SERVER_PORT}/results/{image_names[0]}"
-    image_url = f"The generated image available at the URL {url}"
-    return image_url
+    try:
+        app_settings.settings.lcm_diffusion_setting.prompt = prompt
+        images = context.generate_text_to_image(app_settings.settings)
+        
+        if images is None:
+            error_msg = context.error() or "Image generation failed"
+            logging.error(f"Image generation failed: {error_msg}")
+            raise Exception(f"Image generation failed: {error_msg}")
+        
+        image_names = context.save_images(
+            images,
+            app_settings.settings,
+        )
+        
+        if not image_names:
+            raise Exception("Failed to save generated images")
+        
+        # url = request.url_for("results", path=image_names[0]) - Claude Desktop returns api_server
+        url = f"http://localhost:{SERVER_PORT}/results/{image_names[0]}"
+        image_url = f"The generated image available at the URL {url}"
+        return image_url
+    except Exception as e:
+        logging.exception(f"Error in generate endpoint: {e}")
+        raise
 
 
 def start_mcp_server(port: int = 8000):
