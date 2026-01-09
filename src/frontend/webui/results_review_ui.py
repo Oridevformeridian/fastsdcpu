@@ -166,7 +166,18 @@ def get_results_review_ui():
                     if not path:
                         return "(no file)"
                     name = os.path.basename(path)
-                    json_url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(os.path.splitext(name)[0] + '.json')}"
+                    name_without_ext = os.path.splitext(name)[0]
+                    
+                    # Remove the -N suffix if present (e.g., "uuid-1" -> "uuid")
+                    # Images: uuid-1.png, uuid-2.png, etc.
+                    # JSON: uuid.json (no index suffix)
+                    if '-' in name_without_ext:
+                        parts = name_without_ext.rsplit('-', 1)
+                        # Only strip if last part is a number (the index)
+                        if len(parts) == 2 and parts[1].isdigit():
+                            name_without_ext = parts[0]
+                    
+                    json_url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(name_without_ext + '.json')}"
                     try:
                         with urllib.request.urlopen(json_url, timeout=2) as f:
                             data = json.load(f)
@@ -179,7 +190,15 @@ def get_results_review_ui():
                     if not path:
                         return "(no file)"
                     name = os.path.basename(path)
-                    json_url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(os.path.splitext(name)[0] + '.json')}"
+                    name_without_ext = os.path.splitext(name)[0]
+                    
+                    # Remove the -N suffix if present
+                    if '-' in name_without_ext:
+                        parts = name_without_ext.rsplit('-', 1)
+                        if len(parts) == 2 and parts[1].isdigit():
+                            name_without_ext = parts[0]
+                    
+                    json_url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(name_without_ext + '.json')}"
                     payload = None
                     try:
                         with urllib.request.urlopen(json_url, timeout=2) as f:
