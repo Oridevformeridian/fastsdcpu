@@ -470,10 +470,14 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
     # Log initial memory state
     _log_memory_stats(phase="worker_startup")
     
-    # Clean up any orphaned 'running' jobs from previous container runs
-    orphaned_count = reset_orphaned_jobs(db_file)
-    if orphaned_count > 0:
-        print(f"⚠️  Found {orphaned_count} interrupted job(s) from restart - requeued for retry")
+    # Check if queue is paused - if so, don't auto-retry orphaned jobs
+    if is_queue_paused(db_file):
+        print("⏸️  Queue is paused - not requeuing interrupted jobs from restart")
+    else:
+        # Clean up any orphaned 'running' jobs from previous container runs
+        orphaned_count = reset_orphaned_jobs(db_file)
+        if orphaned_count > 0:
+            print(f"⚠️  Found {orphaned_count} interrupted job(s) from restart - requeued for retry")
     
     print("✓ Queue worker started and ready to process jobs")
     
