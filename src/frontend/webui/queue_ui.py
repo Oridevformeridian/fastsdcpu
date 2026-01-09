@@ -88,6 +88,9 @@ def get_queue_ui():
         
         # Hidden timer for auto-refresh every 3 seconds
         timer = gr.Timer(value=3, active=True)
+        
+        # Hidden component for triggering page reload on connection restore
+        reload_trigger = gr.HTML(value="", visible=False)
 
         def _get_current_job_status():
             """Fetch and format the current running job"""
@@ -133,9 +136,18 @@ def get_queue_ui():
                 return f"### Current Job: #{job_id} (Running for {elapsed})"
 
         def _refresh(show_completed_filter=True):
+            # Check if we were disconnected before making the API call
+            was_disconnected = not conn_state.is_connected and conn_state.error_shown
+            
             payload = _api_get("/api/queue")
+            reload_html = ""
+            
+            # If we just reconnected, trigger page reload after 2 seconds
+            if was_disconnected and conn_state.is_connected and payload is not None:
+                reload_html = '<script>setTimeout(function() { window.location.reload(); }, 2000);</script>'
+            
             if not payload:
-                return [], "(failed to fetch queue)", _get_current_job_status()
+                return [], "(failed to fetch queue)", _get_current_job_status(), reload_html
             rows = []
             for j in payload.get("jobs", []):
                 job_status = j.get("status")
@@ -151,7 +163,7 @@ def get_queue_ui():
                     _fmt(j.get("finished_at")),
                     (j.get("result") or "")[:200],
                 ])
-            return rows, f"Loaded {len(rows)} jobs", _get_current_job_status()
+            return rows, f"Loaded {len(rows)} jobs", _get_current_job_status(), reload_html
 
         def _cancel(job_id):
             if not job_id:
@@ -259,12 +271,12 @@ def get_queue_ui():
         table.select(fn=_on_row_select, outputs=[job_id_input, status])
         
         # Auto-refresh on tab load
-        queue_block.load(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display])
+        queue_block.load(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display, reload_trigger])
         
         # Auto-refresh every 3 seconds via timer (updates current job timer too)
-        timer.tick(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display])
+        timer.tick(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display, reload_trigger])
         
         # Refresh when filter checkbox changes
-        show_completed.change(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display])
+        show_completed.change(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display, reload_trigger])
     
     return queue_block

@@ -11,6 +11,7 @@ class ConnectionState:
         self.last_error_time = 0
         self.error_shown = False
         self.error_cooldown = 5  # seconds between error notifications
+        self.reload_on_restore = True  # Auto-reload page when connection restored
     
     def mark_disconnected(self, show_ui_feedback=True):
         """Mark API as disconnected and optionally show error once"""
@@ -31,14 +32,19 @@ class ConnectionState:
         return False
     
     def mark_connected(self, show_ui_feedback=True):
-        """Mark API as connected and optionally show restoration notice"""
+        """Mark API as connected and optionally show restoration notice with page reload"""
         was_disconnected = not self.is_connected
         self.is_connected = True
         
         # Show green success message if we were previously disconnected
         if show_ui_feedback and was_disconnected and self.error_shown:
-            gr.Info("✅ Connection restored! API server is back online.")
+            gr.Info("✅ Connection restored! Reloading page to get latest updates...")
             self.error_shown = False
+            
+            # Trigger page reload if enabled
+            if self.reload_on_restore:
+                # Return special marker that UI can use to trigger reload
+                return "RELOAD_PAGE"
         
         return True
     
