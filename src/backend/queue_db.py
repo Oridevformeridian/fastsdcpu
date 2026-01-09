@@ -24,6 +24,16 @@ def init_db(db_path: str):
         """
     )
     
+    # Create settings table for queue control (pause, etc.)
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS queue_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+        """
+    )
+    
     # Migration: Add payload_json_path column if it doesn't exist
     try:
         cur.execute("SELECT payload_json_path FROM queue LIMIT 1")
@@ -205,3 +215,30 @@ def reset_orphaned_jobs(db_path: str) -> int:
         conn.commit()
     conn.close()
     return count
+
+
+def is_queue_paused(db_path: str) -> bool:
+    """Check if the queue is paused."""
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM queue_settings WHERE key = 'paused'")
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return False
+    return row[0] == "true"
+
+
+def set_queue_paused(db_path: str, paused: bool):
+    """Set the queue pause state."""
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    value = "true" if paused else "false"
+    cur.execute(
+        "INSERT OR REPLACE INTO queue_settings (key, value) VALUES (?, ?)",
+        ("paused", value),
+    )
+    conn.commit()
+    conn.close()

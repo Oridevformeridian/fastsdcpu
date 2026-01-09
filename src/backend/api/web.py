@@ -36,6 +36,8 @@ from backend.queue_db import (
     cancel_job,
     reset_orphaned_jobs,
     update_job_progress,
+    is_queue_paused,
+    set_queue_paused,
 )
 import threading
 import time
@@ -429,6 +431,11 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
         job = None
         job_id = None
         try:
+            # Check if queue is paused
+            if is_queue_paused(db_file):
+                time.sleep(poll_interval)
+                continue
+            
             job = pop_next_job(db_file)
             if not job:
                 time.sleep(poll_interval)

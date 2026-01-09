@@ -63,6 +63,7 @@ def get_queue_ui():
         with gr.Row():
             with gr.Column(scale=4):
                 with gr.Row():
+                    pause_btn = gr.Button("⏸️ Pause Queue", size="sm", variant="primary")
                     cancel_btn = gr.Button("🚫 Cancel", size="sm")
                     rerun_btn = gr.Button("♻️ Rerun", size="sm")
                     easyregen_btn = gr.Button("⚡ EasyRegen", size="sm")
@@ -160,9 +161,26 @@ def get_queue_ui():
             except Exception:
                 return f"### Current Job: #{job_id} (Running for {elapsed}{estimated_total})"
 
+        def _toggle_pause():
+            """Toggle queue pause state"""
+            resp = _api_post("/api/queue/pause", {})
+            if not resp:
+                return "⏸️ Pause Queue", "Failed to toggle pause"
+            
+            paused = resp.get("paused", False)
+            if paused:
+                return "▶️ Resume Queue", "✓ Queue paused - will finish current job then stop"
+            else:
+                return "⏸️ Pause Queue", "✓ Queue resumed - processing jobs"
+
         def _refresh(show_completed_filter=True):
             # Check if we were disconnected before making the API call
             was_disconnected = not conn_state.is_connected and conn_state.error_shown
+            
+            # Check pause state
+            pause_state = _api_get("/api/queue/pause")
+            paused = pause_state.get("paused", False) if pause_state else False
+            pause_btn_label = "▶️ Resume Queue" if paused else "⏸️ Pause Queue"
             
             payload = _api_get("/api/queue")
             reload_html = ""
@@ -172,7 +190,7 @@ def get_queue_ui():
                 reload_html = '<script>setTimeout(function() { window.location.reload(); }, 2000);</script>'
             
             if not payload:
-                return [], "(failed to fetch queue)", _get_current_job_status(), reload_html
+                return [], "(failed to fetch queue)", _get_current_job_status(), reload_html, pause_btn_label
             rows = []
             for j in payload.get("jobs", []):
                 job_status = j.get("status")
@@ -195,7 +213,7 @@ def get_queue_ui():
                     _fmt(j.get("finished_at")),
                     (j.get("result") or "")[:200],
                 ])
-            return rows, f"Loaded {len(rows)} jobs", _get_current_job_status(), reload_html
+            return rows, f"Loaded {len(rows)} jobs", _get_current_job_status(), reload_html, pause_btn_label
 
         def _cancel(job_id):
             if not job_id:
@@ -321,6 +339,7 @@ def get_queue_ui():
             except Exception as e:
                 return None, f"Selection error: {e}"
 
+        pause_btn.click(fn=_toggle_pause, outputs=[pause_btn, status])
         cancel_btn.click(fn=_cancel, inputs=[job_id_input], outputs=[status])
         rerun_btn.click(fn=_rerun, inputs=[job_id_input], outputs=[status])
         easyregen_btn.click(fn=_easyregen, inputs=[job_id_input], outputs=[status])
@@ -331,12 +350,12 @@ def get_queue_ui():
         table.select(fn=_on_row_select, outputs=[job_id_input, status])
         
         # Auto-refresh on tab load
-        queue_block.load(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display, reload_trigger])
+        queue_block.load(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display, reload_trigger, pause_btn])
         
         # Auto-refresh every 3 seconds via timer (updates current job timer too)
-        timer.tick(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display, reload_trigger])
+        timer.tick(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display, reload_trigger, pause_btn])
         
         # Refresh when filter checkbox changes
-        show_completed.change(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display, reload_trigger])
+        show_completed.change(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display, reload_trigger, pause_btn])
     
     return queue_block
