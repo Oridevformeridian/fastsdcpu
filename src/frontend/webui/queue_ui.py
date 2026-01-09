@@ -65,6 +65,7 @@ def get_queue_ui():
                 with gr.Row():
                     cancel_btn = gr.Button("🚫 Cancel", size="sm")
                     rerun_btn = gr.Button("♻️ Rerun", size="sm")
+                    easyregen_btn = gr.Button("⚡ EasyRegen", size="sm")
                     details_btn = gr.Button("📋 Details", size="sm")
                     download_btn = gr.Button("💾 Download Payload", size="sm")
             with gr.Column(scale=1, min_width=120):
@@ -195,6 +196,33 @@ def get_queue_ui():
             except Exception as e:
                 return f"Failed to rerun: {e}"
 
+        def _easyregen(job_id):
+            if not job_id:
+                return "No job id provided"
+            try:
+                # Get the job payload
+                job_payload = _api_get(f"/api/queue/{int(job_id)}")
+                if not job_payload or not job_payload.get("job"):
+                    return f"Job {job_id} not found"
+                
+                # Extract and modify the payload
+                job = job_payload.get("job")
+                payload_str = job.get("payload", "{}")
+                payload = json.loads(payload_str)
+                
+                # Modify for easy/fast regeneration
+                payload["image_width"] = 512
+                payload["image_height"] = 512
+                payload["inference_steps"] = 8
+                
+                # Enqueue the modified job
+                resp = _api_post("/api/queue", payload)
+                if resp and resp.get("job_id"):
+                    return f"EasyRegen queued as job {resp.get('job_id')} (512x512, 8 steps)"
+                return "Failed to queue easyregen"
+            except Exception as e:
+                return f"Failed to easyregen: {e}"
+
 
         def _details(job_id):
             if not job_id:
@@ -264,6 +292,7 @@ def get_queue_ui():
 
         cancel_btn.click(fn=_cancel, inputs=[job_id_input], outputs=[status])
         rerun_btn.click(fn=_rerun, inputs=[job_id_input], outputs=[status])
+        easyregen_btn.click(fn=_easyregen, inputs=[job_id_input], outputs=[status])
         details_btn.click(fn=_details, inputs=[job_id_input], outputs=[status, details_area])
         download_btn.click(fn=_download_payload, inputs=[job_id_input], outputs=[status, download_file])
         
