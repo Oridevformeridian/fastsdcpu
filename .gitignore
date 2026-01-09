@@ -6,3 +6,4 @@ __pycache__
 results
 # excluding user settings for the GUI frontend
 configs/settings.yaml
+queue.db
