@@ -54,8 +54,13 @@ def get_queue_ui():
         with gr.Row():
             job_id_input = gr.Number(value=None, label="Job ID", precision=0)
             cancel_btn = gr.Button("Cancel")
+            rerun_btn = gr.Button("♻️ Rerun")
             details_btn = gr.Button("Details")
             download_btn = gr.Button("Download Payload JSON")
+        
+        with gr.Row():
+            show_completed = gr.Checkbox(label="Show Completed/Failed Jobs", value=True)
+        
         status = gr.Markdown("")
         table = gr.Dataframe(headers=["id", "status", "created_at", "started_at", "finished_at", "result"], datatype=["number","str","str","str","str","str"], interactive=False)
         details_area = gr.Markdown("")
@@ -107,15 +112,20 @@ def get_queue_ui():
             except Exception:
                 return f"### Current Job: #{job_id} (Running for {elapsed})"
 
-        def _refresh():
+        def _refresh(show_completed_filter=True):
             payload = _api_get("/api/queue")
             if not payload:
                 return [], "(failed to fetch queue)", _get_current_job_status()
             rows = []
             for j in payload.get("jobs", []):
+                job_status = j.get("status")
+                # Filter out completed/failed if checkbox is unchecked
+                if not show_completed_filter and job_status in ("done", "failed", "cancelled"):
+                    continue
+                    
                 rows.append([
                     j.get("id"),
-                    j.get("status"),
+                    job_status,
                     _fmt(j.get("created_at")),
                     _fmt(j.get("started_at")),
                     _fmt(j.get("finished_at")),
@@ -125,6 +135,28 @@ def get_queue_ui():
 
         def _cancel(job_id):
             if not job_id:
+
+        def _rerun(job_id):
+            if not job_id:
+                return "No job id provided"
+            try:
+                # Get the job payload
+                job_payload = _api_get(f"/api/queue/{int(job_id)}")
+                if not job_payload or not job_payload.get("job"):
+                    return f"Job {job_id} not found"
+                
+                # Extract the original payload
+                job = job_payload.get("job")
+                payload_str = job.get("payload", "{}")
+                payload = json.loads(payload_str)
+                
+                # Enqueue a new job with the same payload
+                resp = _api_post("/api/queue", payload)
+                if resp and resp.get("job_id"):
+                    return f"Requeued as job {resp.get('job_id')}"
+                return "Failed to requeue"
+            except Exception as e:
+                return f"Failed to rerun: {e}"
                 return "No job id provided"
             resp = _api_post(f"/api/queue/{int(job_id)}/cancel", {})
             if not resp:
@@ -145,14 +177,18 @@ def get_queue_ui():
                 f"- created: {_fmt(j.get('created_at'))}  \n"
                 f"- started: {_fmt(j.get('started_at'))}  \n"
                 f"- finished: {_fmt(j.get('finished_at'))}  \n"
-                f"- result: {j.get('result') or ''}  \n"
-            )
-            return f"Loaded job {job_id}", text
-
-        def _download_payload(job_id):
-            if not job_id:
-                return "No job id provided", None
-            try:
+        rerun_btn.click(fn=_rerun, inputs=[job_id_input], outputs=[status])
+        details_btn.click(fn=_details, inputs=[job_id_input], outputs=[status, details_area])
+        download_btn.click(fn=_download_payload, inputs=[job_id_input], outputs=[status, download_file])
+        
+        # Auto-refresh on tab load
+        queue_block.load(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display])
+        
+        # Auto-refresh every 3 seconds via timer (updates current job timer too)
+        timer.tick(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display])
+        
+        # Refresh when filter checkbox changes
+        show_completed.change(fn=_refresh, inputs=[show_completed]
                 url = f"{API_BASE}/api/queue/{int(job_id)}/payload"
                 req = urllib.request.Request(url)
                 with urllib.request.urlopen(req, timeout=10) as resp:
