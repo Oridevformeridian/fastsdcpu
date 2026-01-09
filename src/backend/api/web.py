@@ -191,12 +191,18 @@ async def list_results_paged(page: int = 0, size: int = 20):
             uuid = uuid_match.group(1)
             json_path = os.path.join(path, uuid + ".json")
             if os.path.exists(json_path):
-                try:
-                    with open(json_path, "r", encoding="utf-8") as f:
-                        meta = json.load(f)
-                    print(f"[DEBUG] Loaded JSON for {entry_name}: UUID={uuid}, keys={list(meta.keys())}, prompt={meta.get('prompt', 'N/A')[:50]}")
-                except Exception as e:
-                    print(f"[DEBUG] Failed to load JSON for {entry_name}: {e}")
+                # Retry logic to handle race conditions with file writes
+                for attempt in range(3):
+                    try:
+                        with open(json_path, "r", encoding="utf-8") as f:
+                            meta = json.load(f)
+                        print(f"[DEBUG] Loaded JSON for {entry_name}: UUID={uuid}, keys={list(meta.keys())}, prompt={meta.get('prompt', 'N/A')[:50]}")
+                        break
+                    except (json.JSONDecodeError, IOError) as e:
+                        if attempt < 2:
+                            time.sleep(0.05)  # Wait 50ms before retry
+                        else:
+                            print(f"[DEBUG] Failed to load JSON for {entry_name} after 3 attempts: {e}")
             else:
                 print(f"[DEBUG] JSON not found for {entry_name}: {json_path}")
         else:

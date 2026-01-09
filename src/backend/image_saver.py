@@ -60,16 +60,36 @@ class ImageSaver:
                 image_extension = get_image_file_extension(format)
                 image_file_name = f"{gen_id}-{index+1}{image_extension}"
                 image_ids.append(image_file_name)
-                image.save(path.join(out_path, image_file_name), quality = jpeg_quality)
+                image_path = path.join(out_path, image_file_name)
+                image.save(image_path, quality = jpeg_quality)
+                # Force flush to disk to prevent file contention issues
+                try:
+                    import os
+                    fd = os.open(image_path, os.O_RDONLY)
+                    os.fsync(fd)
+                    os.close(fd)
+                except Exception:
+                    pass  # Best effort
             if lcm_diffusion_setting:
                 data = lcm_diffusion_setting.model_dump(exclude=get_exclude_keys())
                 if image_seeds:
                     data['image_seeds'] = image_seeds
-                with open(path.join(out_path, f"{gen_id}.json"), "w") as json_file:
+                json_path = path.join(out_path, f"{gen_id}.json")
+                with open(json_path, "w") as json_file:
                     json.dump(
                         data,
                         json_file,
                         indent=4,
                     )
+                    json_file.flush()
+                    os.fsync(json_file.fileno())
+                # Additional sync to ensure directory metadata is updated
+                try:
+                    import os
+                    dir_fd = os.open(out_path, os.O_RDONLY)
+                    os.fsync(dir_fd)
+                    os.close(dir_fd)
+                except Exception:
+                    pass  # Best effort
         return image_ids
             
