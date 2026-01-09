@@ -173,7 +173,7 @@ def get_results_review_ui():
                             pretty = json.dumps(data, indent=2)
                             return f"Loaded JSON for {name}:\n```json\n{pretty}\n```"
                     except Exception as e:
-                        return f"failed to load json: {e}"
+                        return f"failed to load json from {json_url}: {e}"
 
                 def _regenerate(path):
                     if not path:
