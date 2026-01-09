@@ -166,15 +166,7 @@ def get_results_review_ui():
                     if not path:
                         return "(no file)"
                     name = os.path.basename(path)
-                    # Strip the image index suffix (e.g., "uuid-1.png" -> "uuid.json")
-                    # Image format: {gen_id}-{index}.png, JSON format: {gen_id}.json
-                    name_without_ext = os.path.splitext(name)[0]
-                    # Remove the -N suffix if present (e.g., "abc123-1" -> "abc123")
-                    if '-' in name_without_ext:
-                        gen_id = name_without_ext.rsplit('-', 1)[0]
-                    else:
-                        gen_id = name_without_ext
-                    json_url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(gen_id + '.json')}"
+                    json_url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(os.path.splitext(name)[0] + '.json')}"
                     try:
                         with urllib.request.urlopen(json_url, timeout=2) as f:
                             data = json.load(f)
@@ -187,14 +179,7 @@ def get_results_review_ui():
                     if not path:
                         return "(no file)"
                     name = os.path.basename(path)
-                    # Strip the image index suffix (e.g., "uuid-1.png" -> "uuid.json")
-                    name_without_ext = os.path.splitext(name)[0]
-                    # Remove the -N suffix if present
-                    if '-' in name_without_ext:
-                        gen_id = name_without_ext.rsplit('-', 1)[0]
-                    else:
-                        gen_id = name_without_ext
-                    json_url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(gen_id + '.json')}"
+                    json_url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(os.path.splitext(name)[0] + '.json')}"
                     payload = None
                     try:
                         with urllib.request.urlopen(json_url, timeout=2) as f:
