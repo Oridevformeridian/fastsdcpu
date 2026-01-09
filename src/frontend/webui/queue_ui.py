@@ -64,6 +64,7 @@ def get_queue_ui():
         
         with gr.Row():
             show_completed = gr.Checkbox(label="Show Completed/Failed Jobs", value=True)
+            gr.Markdown("💡 *Click any row to select*", elem_classes=["text-sm"])
         
         status = gr.Markdown("")
         
@@ -209,10 +210,26 @@ def get_queue_ui():
             except Exception as e:
                 return f"Failed to download payload: {e}", None
 
+        def _on_row_select(evt: gr.SelectData, table_data):
+            """When user clicks a row, populate the Job ID input"""
+            if evt.index is None or len(evt.index) < 1:
+                return None, ""
+            row_index = evt.index[0]
+            if table_data is None or row_index >= len(table_data):
+                return None, ""
+            row = table_data[row_index]
+            job_id = row[0] if row and len(row) > 0 else None
+            if job_id:
+                return job_id, f"✓ Selected job #{int(job_id)}"
+            return None, ""
+
         cancel_btn.click(fn=_cancel, inputs=[job_id_input], outputs=[status])
         rerun_btn.click(fn=_rerun, inputs=[job_id_input], outputs=[status])
         details_btn.click(fn=_details, inputs=[job_id_input], outputs=[status, details_area])
         download_btn.click(fn=_download_payload, inputs=[job_id_input], outputs=[status, download_file])
+        
+        # Row selection - click any row to populate Job ID
+        table.select(fn=_on_row_select, inputs=[table], outputs=[job_id_input, status])
         
         # Auto-refresh on tab load
         queue_block.load(fn=_refresh, inputs=[show_completed], outputs=[table, status, current_job_display])
