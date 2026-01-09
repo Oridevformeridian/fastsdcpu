@@ -69,11 +69,12 @@ def get_results_review_ui():
     PAGE_SIZE = 6
 
     with gr.Blocks() as results_block:
-        # Top navigation
+        # Top navigation with filter
         with gr.Row():
             prev_btn_top = gr.Button("←", scale=0, min_width=50)
             page_indicator = gr.Markdown("Page 1")
             next_btn_top = gr.Button("→", scale=0, min_width=50)
+            show_failed = gr.Checkbox(label="Show Failed Images", value=True)
             
         # Preview gallery at top
         files_gallery = gr.Gallery(label="Generated results", columns=3, height=240)
@@ -190,7 +191,7 @@ def get_results_review_ui():
             page_indicator_bottom = gr.Markdown("Page 1")
             next_btn_bottom = gr.Button("→", scale=0, min_width=50)
 
-        def _populate_page(page_index: int):
+        def _populate_page(page_index: int, show_failed_filter: bool):
             payload = _api_get("/api/results/paged", {"page": page_index, "size": PAGE_SIZE})
             if not payload:
                 # fallback to local listing
@@ -228,26 +229,33 @@ def get_results_review_ui():
                     name = item.get("name")
                     # Use local file path instead of URL to avoid safehttpx validation issues
                     local_path = os.path.join(results_path, name)
-                    print(f"[DEBUG-UI] Image {i}: name={name}, path={local_path}, exists={os.path.exists(local_path)}")
+                    file_exists = os.path.exists(local_path)
+                    print(f"[DEBUG-UI] Image {i}: name={name}, path={local_path}, exists={file_exists}")
+                    
+                    # Filter out missing files if show_failed is False
+                    if not show_failed_filter and not file_exists:
+                        out.extend([None, "", "", "", "", ""])
+                        continue
+                    
                     mtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(item.get("mtime", 0)))
                     prompt_val = item.get("meta", {}).get("prompt", "")
                     model_val = item.get("meta", {}).get("model", "") or item.get("meta", {}).get("openvino_model", "")
                     print(f"[DEBUG-UI]   prompt={prompt_val[:50] if prompt_val else 'EMPTY'}, model={model_val}")
-                    page_paths.append(local_path)
-                    out.extend([local_path, name, mtime, prompt_val, model_val, local_path])
+                    page_paths.append(local_path if file_exists else None)
+                    out.extend([local_path if file_exists else None, name, mtime, prompt_val, model_val, local_path])
                 else:
                     out.extend([None, "", "", "", "", ""]) 
             return tuple([page_paths] + out)
 
-        def _prev(page_index: int):
+        def _prev(page_index: int, show_failed_filter: bool):
             new_page = max(0, page_index - 1)
-            return _populate_page(new_page)
+            return _populate_page(new_page, show_failed_filter)
 
-        def _next(page_index: int):
+        def _next(page_index: int, show_failed_filter: bool):
             paths = _list_results_paths()
             max_page = max(0, (len(paths) - 1) // PAGE_SIZE)
             new_page = min(max_page, page_index + 1)
-            return _populate_page(new_page)
+            return _populate_page(new_page, show_failed_filter)
 
         # wire pagination controls: outputs are files_gallery, page_state, page_indicator (top & bottom) + per-slot component values
         outputs = [files_gallery, page_state, page_indicator, page_indicator_bottom]
@@ -255,15 +263,18 @@ def get_results_review_ui():
             outputs.extend([image_slots[i], name_slots[i], mtime_slots[i], prompt_slots[i], model_slots[i], path_states[i]])
         
         # Wire all navigation buttons
-        prev_btn_top.click(fn=_prev, inputs=[page_state], outputs=outputs)
-        next_btn_top.click(fn=_next, inputs=[page_state], outputs=outputs)
-        prev_btn_bottom.click(fn=_prev, inputs=[page_state], outputs=outputs)
-        next_btn_bottom.click(fn=_next, inputs=[page_state], outputs=outputs)
+        prev_btn_top.click(fn=_prev, inputs=[page_state, show_failed], outputs=outputs)
+        next_btn_top.click(fn=_next, inputs=[page_state, show_failed], outputs=outputs)
+        prev_btn_bottom.click(fn=_prev, inputs=[page_state, show_failed], outputs=outputs)
+        next_btn_bottom.click(fn=_next, inputs=[page_state, show_failed], outputs=outputs)
         
-        # Auto-refresh on tab load
-        results_block.load(fn=lambda: _populate_page(0), inputs=None, outputs=outputs)
+        # Wire filter toggle
+        show_failed.change(fn=_populate_page, inputs=[page_state, show_failed], outputs=outputs)
         
-        # Auto-refresh every 10 seconds via timer (refresh current page)
-        timer.tick(fn=lambda p: _populate_page(p), inputs=[page_state], outputs=outputs)
+        # Wire timer refresh
+        timer.tick(fn=_populate_page, inputs=[page_state, show_failed], outputs=outputs)
+
+        # Initialize on load
+        results_block.load(fn=_populate_page, inputs=[page_state, show_failed], outputs=outputs)
     
     return results_block
