@@ -164,87 +164,87 @@ async def list_results_paged(page: int = 0, size: int = 20):
         # invalidate cache if directory changed
         if cache.get("dir_mtime") != dir_mtime:
             cache["dir_mtime"] = dir_mtime
-        cache["pages"].clear()
+            cache["pages"].clear()
 
-    key = f"{page}:{size}"
-    now = time.time()
-    entry = cache["pages"].get(key)
-    if entry and (now - entry["timestamp"] < cache["ttl"]):
-        return entry["data"]
+        key = f"{page}:{size}"
+        now = time.time()
+        entry = cache["pages"].get(key)
+        if entry and (now - entry["timestamp"] < cache["ttl"]):
+            return entry["data"]
 
-    # Only list image files (jpg, png)
-    all_entries = [
-        e for e in os.listdir(path) 
-        if os.path.isfile(os.path.join(path, e)) 
-        and (e.lower().endswith('.jpg') or e.lower().endswith('.png') or e.lower().endswith('.jpeg'))
-    ]
-    all_entries.sort(key=lambda e: os.stat(os.path.join(path, e)).st_mtime, reverse=True)
+        # Only list image files (jpg, png)
+        all_entries = [
+            e for e in os.listdir(path) 
+            if os.path.isfile(os.path.join(path, e)) 
+            and (e.lower().endswith('.jpg') or e.lower().endswith('.png') or e.lower().endswith('.jpeg'))
+        ]
+        all_entries.sort(key=lambda e: os.stat(os.path.join(path, e)).st_mtime, reverse=True)
 
-    start = page * size
-    end = start + size
-    page_entries = all_entries[start:end]
+        start = page * size
+        end = start + size
+        page_entries = all_entries[start:end]
 
-    results = []
-    for entry_name in page_entries:
-        try:
-            full = os.path.join(path, entry_name)
-            stat = os.stat(full)
-            
-            # Extract UUID from filename and look for corresponding JSON
-            import re
-            base_name = os.path.splitext(entry_name)[0]
-            # Match UUID pattern in filename (with or without batch suffix)
-            uuid_match = re.match(r'^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', base_name)
-            meta = {}
-            if uuid_match:
-                uuid = uuid_match.group(1)
-                json_path = os.path.join(path, uuid + ".json")
-                if os.path.exists(json_path):
-                    # Retry logic to handle race conditions with file writes
-                    for attempt in range(3):
-                        try:
-                            with open(json_path, "r", encoding="utf-8") as f:
-                                meta = json.load(f)
-                            if DEBUG_ENABLED:
-                                print(f"[DEBUG] Loaded JSON for {entry_name}: UUID={uuid}, keys={list(meta.keys())}, prompt={meta.get('prompt', 'N/A')[:50]}")
-                            break
-                        except (json.JSONDecodeError, IOError) as e:
-                            if attempt < 2:
-                                time.sleep(0.05)  # Wait 50ms before retry
-                            else:
+        results = []
+        for entry_name in page_entries:
+            try:
+                full = os.path.join(path, entry_name)
+                stat = os.stat(full)
+                
+                # Extract UUID from filename and look for corresponding JSON
+                import re
+                base_name = os.path.splitext(entry_name)[0]
+                # Match UUID pattern in filename (with or without batch suffix)
+                uuid_match = re.match(r'^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', base_name)
+                meta = {}
+                if uuid_match:
+                    uuid = uuid_match.group(1)
+                    json_path = os.path.join(path, uuid + ".json")
+                    if os.path.exists(json_path):
+                        # Retry logic to handle race conditions with file writes
+                        for attempt in range(3):
+                            try:
+                                with open(json_path, "r", encoding="utf-8") as f:
+                                    meta = json.load(f)
                                 if DEBUG_ENABLED:
-                                    print(f"[DEBUG] Failed to load JSON for {entry_name} after 3 attempts: {e}")
-                                logging.warning(f"Failed to load JSON for {entry_name}: {e}")
+                                    print(f"[DEBUG] Loaded JSON for {entry_name}: UUID={uuid}, keys={list(meta.keys())}, prompt={meta.get('prompt', 'N/A')[:50]}")
+                                break
+                            except (json.JSONDecodeError, IOError) as e:
+                                if attempt < 2:
+                                    time.sleep(0.05)  # Wait 50ms before retry
+                                else:
+                                    if DEBUG_ENABLED:
+                                        print(f"[DEBUG] Failed to load JSON for {entry_name} after 3 attempts: {e}")
+                                    logging.warning(f"Failed to load JSON for {entry_name}: {e}")
+                    else:
+                        if DEBUG_ENABLED:
+                            print(f"[DEBUG] JSON not found for {entry_name}: {json_path}")
                 else:
                     if DEBUG_ENABLED:
-                        print(f"[DEBUG] JSON not found for {entry_name}: {json_path}")
-            else:
-                if DEBUG_ENABLED:
-                    print(f"[DEBUG] No UUID match for {entry_name}")
+                        print(f"[DEBUG] No UUID match for {entry_name}")
 
-            results.append(
-                {
-                    "name": entry_name,
-                    "url": f"/results/{entry_name}",
-                    "size": stat.st_size,
-                    "mtime": stat.st_mtime,
-                    "meta": meta,
-                    "review": None,
-                }
-            )
-        except Exception as e:
-            # Don't let a single bad entry crash the entire results page
-            logging.error(f"Error processing result entry {entry_name}: {e}")
-            logging.error(f"Traceback: {traceback.format_exc()}")
-            # Continue to next entry without adding this one
-            continue
+                results.append(
+                    {
+                        "name": entry_name,
+                        "url": f"/results/{entry_name}",
+                        "size": stat.st_size,
+                        "mtime": stat.st_mtime,
+                        "meta": meta,
+                        "review": None,
+                    }
+                )
+            except Exception as e:
+                # Don't let a single bad entry crash the entire results page
+                logging.error(f"Error processing result entry {entry_name}: {e}")
+                logging.error(f"Traceback: {traceback.format_exc()}")
+                # Continue to next entry without adding this one
+                continue
 
-    payload = {"page": page, "size": size, "results": results, "total": len(all_entries)}
-    cache["pages"]
+        payload = {"page": page, "size": size, "results": results, "total": len(all_entries)}
+        cache["pages"][key] = {"timestamp": now, "data": payload}
+        return payload
     except Exception as e:
         logging.exception(f"Error in list_results_paged endpoint: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to list results: {str(e)}")[key] = {"timestamp": now, "data": payload}
-    return payload
+        raise HTTPException(status_code=500, detail=f"Failed to list results: {str(e)}")
 
 
 @app.post(
