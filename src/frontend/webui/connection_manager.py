@@ -23,9 +23,15 @@ class ConnectionState:
         
         # Only show error if:
         # 1. UI feedback is requested
-        # 2. We haven't shown an error recently (cooldown)
-        # 3. We just transitioned from connected to disconnected
-        if show_ui_feedback and was_connected and (current_time - self.last_error_time > self.error_cooldown):
+        # 2. We haven't shown an error recently (cooldown) - prevents spam
+        # 3. Either we just transitioned from connected OR enough time has passed since last error
+        should_show = (
+            show_ui_feedback and 
+            (current_time - self.last_error_time > self.error_cooldown) and
+            (was_connected or not self.error_shown)
+        )
+        
+        if should_show:
             gr.Warning("⚠️ Connection to API server lost. Will retry automatically...")
             self.error_shown = True
             self.last_error_time = current_time
