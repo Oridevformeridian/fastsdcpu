@@ -47,7 +47,17 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"error": str(exc), "detail": "Internal server error"}
     )
 
-context = Context(InterfaceType.API_SERVER)
+# Initialize context with error handling
+context = None
+try:
+    logging.info("Initializing context...")
+    context = Context(InterfaceType.API_SERVER)
+    logging.info("Context initialized successfully")
+except Exception as e:
+    logging.exception(f"Failed to initialize context: {e}")
+    # Continue starting server even if context initialization fails
+    # This allows the server to stay up and report errors via API
+
 app.mount("/results", StaticFiles(directory="results"), name="results")
 
 
@@ -82,6 +92,9 @@ async def generate(
     Returns URL of the generated image for text prompt
     """
     try:
+        if context is None:
+            raise Exception("Context not initialized - server startup may have failed")
+        
         app_settings.settings.lcm_diffusion_setting.prompt = prompt
         images = context.generate_text_to_image(app_settings.settings)
         
