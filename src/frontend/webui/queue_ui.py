@@ -55,7 +55,7 @@ def get_queue_ui():
         status = gr.Markdown("")
         table = gr.Dataframe(headers=["id", "status", "created_at", "started_at", "finished_at", "result"], datatype=["number","str","str","str","str","str"], interactive=False)
         details_area = gr.Markdown("")
-        download_link = gr.Markdown("")
+        download_file = gr.File(label="Downloaded Payload", visible=True)
         
         # Hidden timer for auto-refresh every 3 seconds
         timer = gr.Timer(value=3, active=True)
@@ -104,14 +104,24 @@ def get_queue_ui():
 
         def _download_payload(job_id):
             if not job_id:
-                return "No job id provided", ""
-            url = f"{API_BASE}/api/queue/{int(job_id)}/payload"
-            link = f"[Download Payload JSON for Job {job_id}]({url})"
-            return f"Download link generated", link
+                return "No job id provided", None
+            try:
+                url = f"{API_BASE}/api/queue/{int(job_id)}/payload"
+                req = urllib.request.Request(url)
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    content = resp.read()
+                    # Save to temporary file
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(mode='wb', suffix=f'_job_{int(job_id)}_payload.json', delete=False) as tmp:
+                        tmp.write(content)
+                        tmp_path = tmp.name
+                return f"Downloaded payload for job {job_id}", tmp_path
+            except Exception as e:
+                return f"Failed to download payload: {e}", None
 
         cancel_btn.click(fn=_cancel, inputs=[job_id_input], outputs=[status])
         details_btn.click(fn=_details, inputs=[job_id_input], outputs=[status, details_area])
-        download_btn.click(fn=_download_payload, inputs=[job_id_input], outputs=[status, download_link])
+        download_btn.click(fn=_download_payload, inputs=[job_id_input], outputs=[status, download_file])
         
         # Auto-refresh on tab load
         queue_block.load(fn=_refresh, inputs=None, outputs=[table, status])
