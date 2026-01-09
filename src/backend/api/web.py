@@ -7,6 +7,7 @@ import traceback
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 # Debug logging control
 DEBUG_ENABLED = os.environ.get("DEBUG", "false").lower() in ("true", "1", "yes")
@@ -61,6 +62,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 context = Context(InterfaceType.API_SERVER)
+
+# Mount static files for results (images and JSON)
+results_path = app_settings.settings.generated_images.path
+if not results_path:
+    results_path = FastStableDiffusionPaths.get_results_path()
+app.mount("/results", StaticFiles(directory=results_path), name="results")
 
 
 @app.get("/api/")
