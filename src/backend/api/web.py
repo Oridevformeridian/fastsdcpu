@@ -8,6 +8,9 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+# Debug logging control
+DEBUG_ENABLED = os.environ.get("DEBUG", "false").lower() in ("true", "1", "yes")
+
 from backend.api.models.response import StableDiffusionResponse
 from backend.base64_image import base64_image_to_pil, pil_image_to_base64_str
 from backend.device import get_device_name
@@ -200,17 +203,21 @@ async def list_results_paged(page: int = 0, size: int = 20):
                     try:
                         with open(json_path, "r", encoding="utf-8") as f:
                             meta = json.load(f)
-                        print(f"[DEBUG] Loaded JSON for {entry_name}: UUID={uuid}, keys={list(meta.keys())}, prompt={meta.get('prompt', 'N/A')[:50]}")
+                        if DEBUG_ENABLED:
+                            print(f"[DEBUG] Loaded JSON for {entry_name}: UUID={uuid}, keys={list(meta.keys())}, prompt={meta.get('prompt', 'N/A')[:50]}")
                         break
                     except (json.JSONDecodeError, IOError) as e:
                         if attempt < 2:
                             time.sleep(0.05)  # Wait 50ms before retry
                         else:
-                            print(f"[DEBUG] Failed to load JSON for {entry_name} after 3 attempts: {e}")
+                            if DEBUG_ENABLED:
+                                print(f"[DEBUG] Failed to load JSON for {entry_name} after 3 attempts: {e}")
             else:
-                print(f"[DEBUG] JSON not found for {entry_name}: {json_path}")
+                if DEBUG_ENABLED:
+                    print(f"[DEBUG] JSON not found for {entry_name}: {json_path}")
         else:
-            print(f"[DEBUG] No UUID match for {entry_name}")
+            if DEBUG_ENABLED:
+                print(f"[DEBUG] No UUID match for {entry_name}")
 
         results.append(
             {

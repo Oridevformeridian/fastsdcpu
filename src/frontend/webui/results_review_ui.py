@@ -6,7 +6,9 @@ from PIL import Image
 from state import get_settings
 import urllib.request
 import urllib.parse
-import os
+
+# Debug logging control
+DEBUG_ENABLED = os.environ.get("DEBUG", "false").lower() in ("true", "1", "yes")
 
 API_BASE = os.environ.get("API_URL", "http://127.0.0.1:8000")  # default to API server
 
@@ -230,7 +232,8 @@ def get_results_review_ui():
                     # Use local file path instead of URL to avoid safehttpx validation issues
                     local_path = os.path.join(results_path, name)
                     file_exists = os.path.exists(local_path)
-                    print(f"[DEBUG-UI] Image {i}: name={name}, path={local_path}, exists={file_exists}")
+                    if DEBUG_ENABLED:
+                        print(f"[DEBUG-UI] Image {i}: name={name}, path={local_path}, exists={file_exists}")
                     
                     # Filter out missing files if show_failed is False
                     if not show_failed_filter and not file_exists:
@@ -240,7 +243,8 @@ def get_results_review_ui():
                     mtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(item.get("mtime", 0)))
                     prompt_val = item.get("meta", {}).get("prompt", "")
                     model_val = item.get("meta", {}).get("model", "") or item.get("meta", {}).get("openvino_model", "")
-                    print(f"[DEBUG-UI]   prompt={prompt_val[:50] if prompt_val else 'EMPTY'}, model={model_val}")
+                    if DEBUG_ENABLED:
+                        print(f"[DEBUG-UI]   prompt={prompt_val[:50] if prompt_val else 'EMPTY'}, model={model_val}")
                     page_paths.append(local_path if file_exists else None)
                     out.extend([local_path if file_exists else None, name, mtime, prompt_val, model_val, local_path])
                 else:
