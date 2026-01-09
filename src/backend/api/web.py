@@ -1,6 +1,8 @@
 import platform
 import os
 import sqlite3
+import logging
+import traceback
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -377,19 +379,34 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
     orphaned_count = reset_orphaned_jobs(db_file)
     if orphaned_count > 0:
         print(f"Reset {orphaned_count} orphaned job(s) from previous run")
+    
+    print("Queue worker started and ready to process jobs")
+    
     while True:
         job = None
+        job_id = None
         try:
             job = pop_next_job(db_file)
             if not job:
                 time.sleep(poll_interval)
                 continue
+            
             job_id = job["id"]
+            print(f"Processing job {job_id}")
+            
             payload = json.loads(job["payload"]) if job.get("payload") else {}
+            
             try:
                 diffusion_config = LCMDiffusionSetting.model_validate(payload)
-            except Exception:
-                diffusion_config = LCMDiffusionSetting.parse_obj(payload)
+            except Exception as e:
+                logging.warning(f"Job {job_id}: model_validate failed, trying parse_obj: {e}")
+                try:
+                    diffusion_config = LCMDiffusionSetting.parse_obj(payload)
+                except Exception as e2:
+                    error_msg = f"Failed to parse payload: {e2}"
+                    logging.error(f"Job {job_id}: {error_msg}")
+                    fail_job(db_file, job_id, error_msg)
+                    continue
             
             # Check if cancelled before starting generation
             current_job = get_job(db_file, job_id)
@@ -398,15 +415,34 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
                 time.sleep(poll_interval)
                 continue
             
-            app_settings.settings.lcm_diffusion_setting = diffusion_config
-            if diffusion_config.diffusion_task == DiffusionTask.image_to_image:
-                try:
-                    app_settings.settings.lcm_diffusion_setting.init_image = base64_image_to_pil(
-                        diffusion_config.init_image
-                    )
-                except Exception:
-                    pass
-            images = context.generate_text_to_image(app_settings.settings)
+            print(f"Job {job_id}: Starting image generation - {diffusion_config.image_width}x{diffusion_config.image_height}, steps={diffusion_config.inference_steps}")
+            
+            try:
+                app_settings.settings.lcm_diffusion_setting = diffusion_config
+                if diffusion_config.diffusion_task == DiffusionTask.image_to_image:
+                    try:
+                        app_settings.settings.lcm_diffusion_setting.init_image = base64_image_to_pil(
+                            diffusion_config.init_image
+                        )
+                    except Exception as e:
+                        logging.warning(f"Job {job_id}: Failed to decode init_image: {e}")
+                
+                images = context.generate_text_to_image(app_settings.settings)
+                
+                if images is None:
+                    error_msg = context.error or "Image generation returned None"
+                    logging.error(f"Job {job_id}: Generation failed - {error_msg}")
+                    fail_job(db_file, job_id, error_msg)
+                    time.sleep(0.1)
+                    continue
+                
+            except Exception as e:
+                error_msg = f"Image generation exception: {str(e)}"
+                logging.error(f"Job {job_id}: {error_msg}")
+                logging.error(f"Job {job_id}: Full traceback:\n{traceback.format_exc()}")
+                fail_job(db_file, job_id, error_msg)
+                time.sleep(0.1)
+                continue
             
             # Check if job was cancelled during generation (before saving)
             current_job = get_job(db_file, job_id)
@@ -414,28 +450,45 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
                 print(f"Job {job_id} cancelled after generation, not saving files")
                 time.sleep(poll_interval)
                 continue
-                
-            if images:
+            
+            try:
                 saved = context.save_images(images, app_settings.settings)
+                print(f"Job {job_id}: Saved {len(saved) if saved else 0} images")
+                
                 # Final check before marking complete
                 current_job = get_job(db_file, job_id)
                 if current_job and current_job.get("status") == "cancelled":
                     print(f"Job {job_id} cancelled after saving, marking as cancelled")
                     time.sleep(poll_interval)
                     continue
+                
                 complete_job(db_file, job_id, {"saved": saved, "latency": context.latency})
-            else:
-                fail_job(db_file, job_id, context.error or "no images generated")
+                print(f"Job {job_id}: Completed successfully")
+                
+            except Exception as e:
+                error_msg = f"Failed to save images: {str(e)}"
+                logging.error(f"Job {job_id}: {error_msg}")
+                logging.error(f"Job {job_id}: Full traceback:\n{traceback.format_exc()}")
+                fail_job(db_file, job_id, error_msg)
+            
             # Sleep briefly after processing to prevent tight loop
             time.sleep(0.1)
+            
         except Exception as e:
-            print(f"Queue worker error: {e}")
+            error_msg = f"Queue worker critical error: {str(e)}"
+            logging.exception(error_msg)
+            print(f"CRITICAL: {error_msg}")
+            print(f"Full traceback:\n{traceback.format_exc()}")
+            
             try:
-                if job and job.get("id"):
-                    fail_job(db_file, job.get("id"), str(e))
-            except Exception:
-                pass
-            time.sleep(poll_interval)
+                if job_id:
+                    fail_job(db_file, job_id, error_msg)
+                    print(f"Marked job {job_id} as failed")
+            except Exception as e2:
+                logging.error(f"Failed to mark job as failed: {e2}")
+            
+            # Sleep longer after critical errors to prevent rapid failures
+            time.sleep(poll_interval * 2)
 
 
 # start background worker for API server
