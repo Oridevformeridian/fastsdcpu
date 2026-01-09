@@ -124,10 +124,10 @@ def get_queue_ui():
             return rows, f"Loaded {len(rows)} jobs", _get_current_job_status()
 
         def _cancel(job_id):
-            if not job_id:, current_job_display])
-        
-        # Auto-refresh every 3 seconds via timer (updates current job timer too)
-        timer.tick(fn=_refresh, inputs=None, outputs=[table, status, current_job_display
+            if not job_id:
+                return "No job id provided"
+            resp = _api_post(f"/api/queue/{int(job_id)}/cancel", {})
+            if not resp:
                 return "Cancel failed"
             return f"Cancelled {job_id}"
 
@@ -171,9 +171,9 @@ def get_queue_ui():
         download_btn.click(fn=_download_payload, inputs=[job_id_input], outputs=[status, download_file])
         
         # Auto-refresh on tab load
-        queue_block.load(fn=_refresh, inputs=None, outputs=[table, status])
+        queue_block.load(fn=_refresh, inputs=None, outputs=[table, status, current_job_display])
         
-        # Auto-refresh every 3 seconds via timer
-        timer.tick(fn=_refresh, inputs=None, outputs=[table, status])
+        # Auto-refresh every 3 seconds via timer (updates current job timer too)
+        timer.tick(fn=_refresh, inputs=None, outputs=[table, status, current_job_display])
     
     return queue_block
