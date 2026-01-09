@@ -179,10 +179,17 @@ def get_queue_ui():
                 # Filter out completed/failed if checkbox is unchecked
                 if not show_completed_filter and job_status in ("done", "failed", "cancelled"):
                     continue
+                
+                # Show retry count for queued jobs that have been retried
+                retry_count = j.get("retry_count", 0)
+                if job_status == "queued" and retry_count > 0:
+                    status_display = f"rerunning({retry_count})"
+                else:
+                    status_display = job_status
                     
                 rows.append([
                     j.get("id"),
-                    job_status,
+                    status_display,
                     _fmt(j.get("created_at")),
                     _fmt(j.get("started_at")),
                     _fmt(j.get("finished_at")),
