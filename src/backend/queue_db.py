@@ -16,7 +16,8 @@ def init_db(db_path: str):
             created_at REAL NOT NULL,
             started_at REAL,
             finished_at REAL,
-            result TEXT
+            result TEXT,
+            payload_json_path TEXT
         )
         """
     )
@@ -24,14 +25,14 @@ def init_db(db_path: str):
     conn.close()
 
 
-def enqueue_job(db_path: str, payload: Any) -> int:
+def enqueue_job(db_path: str, payload: Any, payload_json_path: str = None) -> int:
     init_db(db_path)
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     now = time.time()
     cur.execute(
-        "INSERT INTO queue (payload, status, created_at) VALUES (?, ?, ?)",
-        (json.dumps(payload), "queued", now),
+        "INSERT INTO queue (payload, status, created_at, payload_json_path) VALUES (?, ?, ?, ?)",
+        (json.dumps(payload), "queued", now, payload_json_path),
     )
     job_id = cur.lastrowid
     conn.commit()

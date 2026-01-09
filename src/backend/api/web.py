@@ -1,5 +1,6 @@
 import platform
 import os
+import sqlite3
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -28,6 +29,7 @@ from backend.queue_db import (
 )
 import threading
 import time
+import json
 import json
 
 app_settings = get_settings()
@@ -242,12 +244,38 @@ async def enqueue_api(diffusion_config: LCMDiffusionSetting):
             payload = diffusion_config.dict()
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Invalid diffusion config: {e}")
+    
+    # Save payload JSON to disk immediately when enqueued
+    queue_json_dir = os.path.join(path, "queue_payloads")
+    os.makedirs(queue_json_dir, exist_ok=True)
+    # Use timestamp for temporary filename until we get job_id
+    temp_json_path = os.path.join(queue_json_dir, f"temp_{time.time()}.json")
+    
     try:
-        job_id = enqueue_job(db_file, payload)
+        job_id = enqueue_job(db_file, payload, None)  # First create job to get ID
+        # Rename to use actual job_id
+        json_filename = f"job_{job_id}_payload.json"
+        json_path = os.path.join(queue_json_dir, json_filename)
+        
+        # Write the JSON file
+        with open(json_path, "w") as f:
+            json.dump(payload, f, indent=2)
+        
+        # Update the job with the json path
+        conn = sqlite3.connect(db_file)
+        cur = conn.cursor()
+        cur.execute("UPDATE queue SET payload_json_path = ? WHERE id = ?", (json_path, job_id))
+        conn.commit()
+        conn.close()
+        
+        print(f"Enqueued job {job_id} via api/web.py, saved payload to {json_path}")
     except Exception as e:
+        # Clean up temp file if it exists
+        if os.path.exists(temp_json_path):
+            os.remove(temp_json_path)
         raise HTTPException(status_code=500, detail=f"Failed to enqueue job: {e}")
-    print(f"Enqueued job {job_id} via api/web.py")
-    return {"job_id": job_id, "status": "queued"}
+    
+    return {"job_id": job_id, "status": "queued", "payload_json_path": json_path}
 
 
 @app.get(
@@ -297,6 +325,46 @@ async def cancel_queue_job_api(job_id: int):
     if not ok:
         raise HTTPException(status_code=404, detail="Job not found or cannot be cancelled")
     return {"job_id": job_id, "status": "cancelled"}
+
+
+@app.get(
+    "/api/queue/{job_id}/payload",
+    description="Download the payload JSON for a queue job",
+    summary="Download job payload",
+)
+async def download_queue_payload_api(job_id: int):
+    from fastapi.responses import FileResponse
+    path = app_settings.settings.generated_images.path
+    if not path:
+        path = FastStableDiffusionPaths.get_results_path()
+    db_file = os.path.join(path, "queue.db")
+    init_queue_db(db_file)
+    job = get_job(db_file, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    json_path = job.get("payload_json_path")
+    if json_path and os.path.exists(json_path):
+        return FileResponse(
+            json_path,
+            media_type="application/json",
+            filename=f"job_{job_id}_payload.json"
+        )
+    else:
+        # Fallback: generate JSON from stored payload
+        payload_str = job.get("payload", "{}")
+        temp_path = os.path.join(path, f"temp_job_{job_id}.json")
+        try:
+            payload_obj = json.loads(payload_str)
+            with open(temp_path, "w") as f:
+                json.dump(payload_obj, f, indent=2)
+            return FileResponse(
+                temp_path,
+                media_type="application/json",
+                filename=f"job_{job_id}_payload.json"
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to generate payload file: {e}")
 
 
 def _queue_worker_loop_api(poll_interval: float = 1.0):

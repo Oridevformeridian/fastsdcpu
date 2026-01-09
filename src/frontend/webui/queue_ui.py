@@ -51,9 +51,11 @@ def get_queue_ui():
             job_id_input = gr.Number(value=None, label="Job ID", precision=0)
             cancel_btn = gr.Button("Cancel")
             details_btn = gr.Button("Details")
+            download_btn = gr.Button("Download Payload JSON")
         status = gr.Markdown("")
         table = gr.Dataframe(headers=["id", "status", "created_at", "started_at", "finished_at", "result"], datatype=["number","str","str","str","str","str"], interactive=False)
         details_area = gr.Markdown("")
+        download_link = gr.Markdown("")
         
         # Hidden timer for auto-refresh every 3 seconds
         timer = gr.Timer(value=3, active=True)
@@ -100,8 +102,16 @@ def get_queue_ui():
             )
             return f"Loaded job {job_id}", text
 
+        def _download_payload(job_id):
+            if not job_id:
+                return "No job id provided", ""
+            url = f"{API_BASE}/api/queue/{int(job_id)}/payload"
+            link = f"[Download Payload JSON for Job {job_id}]({url})"
+            return f"Download link generated", link
+
         cancel_btn.click(fn=_cancel, inputs=[job_id_input], outputs=[status])
         details_btn.click(fn=_details, inputs=[job_id_input], outputs=[status, details_area])
+        download_btn.click(fn=_download_payload, inputs=[job_id_input], outputs=[status, download_link])
         
         # Auto-refresh on tab load
         queue_block.load(fn=_refresh, inputs=None, outputs=[table, status])
