@@ -322,6 +322,14 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
                 diffusion_config = LCMDiffusionSetting.model_validate(payload)
             except Exception:
                 diffusion_config = LCMDiffusionSetting.parse_obj(payload)
+            
+            # Check if cancelled before starting generation
+            current_job = get_job(db_file, job_id)
+            if current_job and current_job.get("status") == "cancelled":
+                print(f"Job {job_id} cancelled before generation started")
+                time.sleep(poll_interval)
+                continue
+            
             app_settings.settings.lcm_diffusion_setting = diffusion_config
             if diffusion_config.diffusion_task == DiffusionTask.image_to_image:
                 try:
@@ -331,13 +339,22 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
                 except Exception:
                     pass
             images = context.generate_text_to_image(app_settings.settings)
-            # Check if job was cancelled during generation
+            
+            # Check if job was cancelled during generation (before saving)
             current_job = get_job(db_file, job_id)
             if current_job and current_job.get("status") == "cancelled":
-                time.sleep(poll_interval)  # Sleep before next iteration
+                print(f"Job {job_id} cancelled after generation, not saving files")
+                time.sleep(poll_interval)
                 continue
+                
             if images:
                 saved = context.save_images(images, app_settings.settings)
+                # Final check before marking complete
+                current_job = get_job(db_file, job_id)
+                if current_job and current_job.get("status") == "cancelled":
+                    print(f"Job {job_id} cancelled after saving, marking as cancelled")
+                    time.sleep(poll_interval)
+                    continue
                 complete_job(db_file, job_id, {"saved": saved, "latency": context.latency})
             else:
                 fail_job(db_file, job_id, context.error or "no images generated")
