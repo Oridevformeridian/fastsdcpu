@@ -1,4 +1,5 @@
 import platform
+import logging
 
 import uvicorn
 from backend.device import get_device_name
@@ -85,6 +86,14 @@ async def generate(
 def start_mcp_server(port: int = 8000):
     global SERVER_PORT
     SERVER_PORT = port
+    
+    # Configure logging to prevent systemd journal issues
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler()]
+    )
+    
     print(f"Starting MCP server on port {port}...")
     mcp = FastApiMCP(
         app,
@@ -97,4 +106,5 @@ def start_mcp_server(port: int = 8000):
         app,
         host="0.0.0.0",
         port=port,
+        log_config=None,  # Disable uvicorn's default log config to prevent journal handler issues
     )
