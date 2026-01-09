@@ -176,13 +176,15 @@ def cancel_job(db_path: str, job_id: int) -> bool:
         conn.close()
         return False
     status = row[0]
-    # Can only cancel queued jobs, not running/done/failed/cancelled
-    if status != "queued":
+    # Can cancel queued or running jobs (running jobs may be orphaned/stuck)
+    # Cannot cancel done/failed/cancelled jobs
+    if status not in ("queued", "running"):
         conn.close()
         return False
-    cur.execute("UPDATE queue SET status = ? WHERE id = ?", ("cancelled", job_id))
+    cur.execute("UPDATE queue SET status = ?, finished_at = ? WHERE id = ?", ("cancelled", time.time(), job_id))
     conn.commit()
     conn.close()
+    return True
     return True
 
 

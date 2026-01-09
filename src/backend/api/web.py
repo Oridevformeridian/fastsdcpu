@@ -405,12 +405,12 @@ async def cancel_queue_job_api(job_id: int):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    # Only allow cancelling queued jobs
+    # Allow cancelling queued or running jobs (running jobs may be orphaned/stuck)
     job_status = job.get("status")
-    if job_status != "queued":
+    if job_status not in ("queued", "running"):
         raise HTTPException(
             status_code=400, 
-            detail=f"Cannot cancel job - status is '{job_status}' (only queued jobs can be cancelled)"
+            detail=f"Cannot cancel job - status is '{job_status}' (can only cancel queued or running jobs)"
         )
     
     ok = cancel_job(db_file, job_id)
