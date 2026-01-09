@@ -59,20 +59,19 @@ def get_queue_ui():
                     rerun_btn = gr.Button("♻️ Rerun", size="sm")
                     details_btn = gr.Button("📋 Details", size="sm")
                     download_btn = gr.Button("💾 Download Payload", size="sm")
-            with gr.Column(scale=1):
-                job_id_input = gr.Number(value=None, label="Job ID", precision=0, scale=0)
+            with gr.Column(scale=1, min_width=120):
+                job_id_input = gr.Number(value=None, label="Job ID", precision=0, scale=0, min_width=100)
         
         with gr.Row():
             show_completed = gr.Checkbox(label="Show Completed/Failed Jobs", value=True)
         
         status = gr.Markdown("")
         
-        # Queue table with interactive checkboxes
+        # Queue table
         table = gr.Dataframe(
-            headers=["select", "id", "status", "created_at", "started_at", "finished_at", "result"], 
-            datatype=["bool", "number", "str", "str", "str", "str", "str"], 
-            interactive=True,
-            col_count=(7, "fixed")
+            headers=["id", "status", "created_at", "started_at", "finished_at", "result"], 
+            datatype=["number", "str", "str", "str", "str", "str"], 
+            interactive=False
         )
         
         details_area = gr.Markdown("")
@@ -136,7 +135,6 @@ def get_queue_ui():
                     continue
                     
                 rows.append([
-                    False,  # checkbox column (unchecked by default)
                     j.get("id"),
                     job_status,
                     _fmt(j.get("created_at")),
