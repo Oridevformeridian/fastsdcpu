@@ -17,7 +17,9 @@ def init_db(db_path: str):
             started_at REAL,
             finished_at REAL,
             result TEXT,
-            payload_json_path TEXT
+            payload_json_path TEXT,
+            progress TEXT,
+            retry_count INTEGER DEFAULT 0
         )
         """
     )
@@ -29,6 +31,20 @@ def init_db(db_path: str):
         # Column doesn't exist, add it
         print("Migrating queue database: adding payload_json_path column")
         cur.execute("ALTER TABLE queue ADD COLUMN payload_json_path TEXT")
+    
+    # Migration: Add progress column if it doesn't exist
+    try:
+        cur.execute("SELECT progress FROM queue LIMIT 1")
+    except sqlite3.OperationalError:
+        print("Migrating queue database: adding progress column")
+        cur.execute("ALTER TABLE queue ADD COLUMN progress TEXT")
+    
+    # Migration: Add retry_count column if it doesn't exist
+    try:
+        cur.execute("SELECT retry_count FROM queue LIMIT 1")
+    except sqlite3.OperationalError:
+        print("Migrating queue database: adding retry_count column")
+        cur.execute("ALTER TABLE queue ADD COLUMN retry_count INTEGER DEFAULT 0")
     
     conn.commit()
     conn.close()
@@ -127,6 +143,19 @@ def fail_job(db_path: str, job_id: int, error: str):
     conn.close()
 
 
+def update_job_progress(db_path: str, job_id: int, progress_data: dict):
+    """Update job progress for checkpoint tracking"""
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE queue SET progress = ? WHERE id = ?",
+        (json.dumps(progress_data), job_id),
+    )
+    conn.commit()
+    conn.close()
+
+
 def cancel_job(db_path: str, job_id: int) -> bool:
     init_db(db_path)
     conn = sqlite3.connect(db_path)
@@ -148,22 +177,31 @@ def cancel_job(db_path: str, job_id: int) -> bool:
 
 
 def reset_orphaned_jobs(db_path: str) -> int:
-    """Reset any 'running' jobs to 'failed' on startup (orphaned by container restart/crash).
+    """Reset any 'running' jobs back to 'queued' for retry on startup (orphaned by container restart/crash).
     Returns the count of jobs reset."""
     init_db(db_path)
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
-    now = time.time()
     # Find all running jobs
-    cur.execute("SELECT id FROM queue WHERE status = 'running'")
+    cur.execute("SELECT id, retry_count FROM queue WHERE status = 'running'")
     rows = cur.fetchall()
     count = len(rows)
     if count > 0:
-        # Mark them as failed with appropriate message
-        cur.execute(
-            "UPDATE queue SET status = ?, finished_at = ?, result = ? WHERE status = 'running'",
-            ("failed", now, json.dumps({"error": "Job interrupted by container restart"})),
-        )
+        # Reset to queued for retry, increment retry count
+        for job_id, retry_count in rows:
+            new_retry_count = (retry_count or 0) + 1
+            if new_retry_count > 3:
+                # Too many retries, mark as failed
+                cur.execute(
+                    "UPDATE queue SET status = ?, finished_at = ?, result = ?, retry_count = ? WHERE id = ?",
+                    ("failed", time.time(), json.dumps({"error": f"Job failed after {new_retry_count} attempts (interrupted by restarts)"}), new_retry_count, job_id),
+                )
+            else:
+                # Reset to queued for retry
+                cur.execute(
+                    "UPDATE queue SET status = ?, started_at = NULL, progress = ?, retry_count = ? WHERE id = ?",
+                    ("queued", json.dumps({"note": f"Retry #{new_retry_count} after restart"}), new_retry_count, job_id),
+                )
         conn.commit()
     conn.close()
     return count

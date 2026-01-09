@@ -31,6 +31,7 @@ from backend.queue_db import (
     fail_job,
     cancel_job,
     reset_orphaned_jobs,
+    update_job_progress,
 )
 import threading
 import time
@@ -397,9 +398,9 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
     # Clean up any orphaned 'running' jobs from previous container runs
     orphaned_count = reset_orphaned_jobs(db_file)
     if orphaned_count > 0:
-        print(f"Reset {orphaned_count} orphaned job(s) from previous run")
+        print(f"⚠️  Found {orphaned_count} interrupted job(s) from restart - requeued for retry")
     
-    print("Queue worker started and ready to process jobs")
+    print("✓ Queue worker started and ready to process jobs")
     
     while True:
         job = None
@@ -411,7 +412,11 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
                 continue
             
             job_id = job["id"]
-            print(f"Processing job {job_id}")
+            retry_count = job.get("retry_count", 0)
+            retry_note = f" (retry #{retry_count})" if retry_count > 0 else ""
+            print(f"Processing job {job_id}{retry_note}")
+            
+            update_job_progress(db_file, job_id, {"phase": "validating", "timestamp": time.time()})
             
             payload = json.loads(job["payload"]) if job.get("payload") else {}
             
@@ -436,6 +441,12 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
             
             print(f"Job {job_id}: Starting image generation - {diffusion_config.image_width}x{diffusion_config.image_height}, steps={diffusion_config.inference_steps}")
             
+            update_job_progress(db_file, job_id, {
+                "phase": "loading_model",
+                "model": diffusion_config.openvino_lcm_model_id,
+                "timestamp": time.time()
+            })
+            
             try:
                 app_settings.settings.lcm_diffusion_setting = diffusion_config
                 if diffusion_config.diffusion_task == DiffusionTask.image_to_image:
@@ -445,6 +456,13 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
                         )
                     except Exception as e:
                         logging.warning(f"Job {job_id}: Failed to decode init_image: {e}")
+                
+                update_job_progress(db_file, job_id, {
+                    "phase": "generating",
+                    "size": f"{diffusion_config.image_width}x{diffusion_config.image_height}",
+                    "steps": diffusion_config.inference_steps,
+                    "timestamp": time.time()
+                })
                 
                 images = context.generate_text_to_image(app_settings.settings)
                 
@@ -471,6 +489,12 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
                 continue
             
             try:
+                update_job_progress(db_file, job_id, {
+                    "phase": "saving",
+                    "image_count": len(images) if images else 0,
+                    "timestamp": time.time()
+                })
+                
                 saved = context.save_images(images, app_settings.settings)
                 print(f"Job {job_id}: Saved {len(saved) if saved else 0} images")
                 
