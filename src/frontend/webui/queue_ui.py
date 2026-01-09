@@ -36,7 +36,17 @@ def _api_post(path: str, data: dict):
             result = json.load(resp)
             conn_state.mark_connected()
             return result
+    except urllib.error.HTTPError as e:
+        # HTTP error (4xx, 5xx) - connection is fine, just a bad request
+        conn_state.mark_connected()
+        try:
+            error_body = json.load(e)
+            error_msg = error_body.get("detail", str(e))
+        except Exception:
+            error_msg = str(e)
+        return {"error": error_msg}
     except Exception:
+        # Connection error
         conn_state.mark_disconnected()
         return None
 
@@ -162,7 +172,9 @@ def get_queue_ui():
             """Toggle queue pause state"""
             resp = _api_post("/api/queue/pause", {})
             if not resp:
-                return "⏸️ Pause Queue", "Failed to toggle pause"
+                return "⏸️ Pause Queue", "Failed to toggle pause - connection error"
+            if "error" in resp:
+                return "⏸️ Pause Queue", f"Failed to toggle pause: {resp['error']}"
             
             paused = resp.get("paused", False)
             if paused:
@@ -209,8 +221,10 @@ def get_queue_ui():
                 return "No job id provided"
             resp = _api_post(f"/api/queue/{int(job_id)}/cancel", {})
             if not resp:
-                return "Cancel failed"
-            return f"Cancelled {job_id}"
+                return "Cancel failed - connection error"
+            if "error" in resp:
+                return f"Cancel failed: {resp['error']}"
+            return f"✓ Cancelled job #{job_id}"
 
         def _rerun(job_id):
             if not job_id:

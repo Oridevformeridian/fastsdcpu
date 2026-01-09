@@ -364,10 +364,25 @@ async def cancel_queue_job_api(job_id: int):
         path = FastStableDiffusionPaths.get_results_path()
     db_file = os.path.join(path, "queue.db")
     init_queue_db(db_file)
+    
+    # Check if job exists first
+    job = get_job(db_file, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Only allow cancelling queued jobs
+    job_status = job.get("status")
+    if job_status != "queued":
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Cannot cancel job - status is '{job_status}' (only queued jobs can be cancelled)"
+        )
+    
     ok = cancel_job(db_file, job_id)
     if not ok:
-        raise HTTPException(status_code=404, detail="Job not found or cannot be cancelled")
-    return {"job_id": job_id, "status": "cancelled"}
+        raise HTTPException(status_code=500, detail="Failed to cancel job")
+    
+    return {"job_id": job_id, "status": "cancelled", "message": f"Job #{job_id} cancelled"}
 
 
 @app.get(
