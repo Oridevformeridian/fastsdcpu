@@ -135,6 +135,11 @@ def get_queue_ui():
 
         def _cancel(job_id):
             if not job_id:
+                return "No job id provided"
+            resp = _api_post(f"/api/queue/{int(job_id)}/cancel", {})
+            if not resp:
+                return "Cancel failed"
+            return f"Cancelled {job_id}"
 
         def _rerun(job_id):
             if not job_id:
@@ -157,11 +162,6 @@ def get_queue_ui():
                 return "Failed to requeue"
             except Exception as e:
                 return f"Failed to rerun: {e}"
-                return "No job id provided"
-            resp = _api_post(f"/api/queue/{int(job_id)}/cancel", {})
-            if not resp:
-                return "Cancel failed"
-            return f"Cancelled {job_id}"
 
 
         def _details(job_id):
