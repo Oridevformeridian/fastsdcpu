@@ -42,6 +42,36 @@ import threading
 import time
 import json
 
+# ---------------------------------------------------------------------------
+# MONKEY-PATCH: Conv2d adapter no-op shim
+#
+# Some third-party adapter/runtime implementations (used by diffusers/peft)
+# may attempt to call adapter management methods (e.g. `delete_adapter`,
+# `add_adapter`, `merge_adapter`) on submodules. In some environments those
+# calls end up resolving to plain `torch.nn.Conv2d` objects which do not
+# implement those methods, causing errors like:
+#     "'Conv2d' object has no attribute 'delete_adapter'"
+#
+# This temporary shim adds safe no-op adapter methods to `nn.Conv2d` so
+# that adapter removal/add operations become no-ops instead of raising
+# AttributeError. Remove this once the underlying library versions are
+# upgraded/fixed (TODO: track upstream diffusers/peft fix).
+# ---------------------------------------------------------------------------
+try:
+    import torch.nn as _nn
+
+    def _lora_noop(self, *args, **kwargs):
+        return None
+
+    if not hasattr(_nn.Conv2d, "delete_adapter"):
+        _nn.Conv2d.delete_adapter = _lora_noop
+    if not hasattr(_nn.Conv2d, "add_adapter"):
+        _nn.Conv2d.add_adapter = _lora_noop
+    if not hasattr(_nn.Conv2d, "merge_adapter"):
+        _nn.Conv2d.merge_adapter = _lora_noop
+except Exception as _ex:
+    print(f"Warning: Conv2d adapter monkey-patch failed: {_ex}")
+
 app_settings = get_settings()
 app = FastAPI(
     title="FastSD CPU",
