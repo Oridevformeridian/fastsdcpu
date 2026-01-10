@@ -66,19 +66,30 @@ def load_lora_weight(
 
     if lcm_diffusion_setting.lora.enabled:
         print(f"LoRA adapter name : {current_lora.adapter_name}")
-        pipeline.load_lora_weights(
-            FastStableDiffusionPaths.get_lora_models_path(),
-            weight_name=Path(lcm_diffusion_setting.lora.path).name,
-            local_files_only=True,
-            adapter_name=current_lora.adapter_name,
-        )
+        if hasattr(pipeline, "load_lora_weights"):
+            try:
+                pipeline.load_lora_weights(
+                    FastStableDiffusionPaths.get_lora_models_path(),
+                    weight_name=Path(lcm_diffusion_setting.lora.path).name,
+                    local_files_only=True,
+                    adapter_name=current_lora.adapter_name,
+                )
+            except Exception as ex:
+                print(f"Failed to load LoRA weights: {ex}")
+                return
+        else:
+            print("Pipeline does not support load_lora_weights; skipping LoRA load")
+            return
         update_lora_weights(
             pipeline,
             lcm_diffusion_setting,
         )
 
-        if lcm_diffusion_setting.lora.fuse:
-            pipeline.fuse_lora()
+        if lcm_diffusion_setting.lora.fuse and hasattr(pipeline, "fuse_lora"):
+            try:
+                pipeline.fuse_lora()
+            except Exception as ex:
+                print(f"Failed to fuse LoRA: {ex}")
 
 
 def get_lora_models(root_dir: str):
@@ -162,12 +173,18 @@ def update_lora_weights(
     for lora in _loaded_loras:
         adapter_names.append(lora.adapter_name)
         adapter_weights.append(lora.weight)
-    pipeline.set_adapters(
-        adapter_names,
-        adapter_weights=adapter_weights,
-    )
-    adapter_weights = zip(adapter_names, adapter_weights)
-    print(f"Adapters: {list(adapter_weights)}")
+    if hasattr(pipeline, "set_adapters"):
+        try:
+            pipeline.set_adapters(
+                adapter_names,
+                adapter_weights=adapter_weights,
+            )
+            adapter_weights = zip(adapter_names, adapter_weights)
+            print(f"Adapters: {list(adapter_weights)}")
+        except Exception as ex:
+            print(f"Failed to set adapters on pipeline: {ex}")
+    else:
+        print("Pipeline does not support set_adapters; cannot update LoRA weights")
 
 
 def remove_loaded_lora(pipeline, lcm_diffusion_setting, adapter_name: str | None = None):
@@ -208,7 +225,13 @@ def remove_loaded_lora(pipeline, lcm_diffusion_setting, adapter_name: str | None
         adapter_weights.append(l.weight)
 
     try:
-        pipeline.set_adapters(adapter_names, adapter_weights=adapter_weights)
-        print(f"Adapters after unload: {list(zip(adapter_names, adapter_weights))}")
+        if hasattr(pipeline, "set_adapters"):
+            try:
+                pipeline.set_adapters(adapter_names, adapter_weights=adapter_weights)
+                print(f"Adapters after unload: {list(zip(adapter_names, adapter_weights))}")
+            except Exception as ex:
+                print(f"Failed to update pipeline adapters after unload: {ex}")
+        else:
+            print("Pipeline does not support set_adapters; adapters not updated after unload")
     except Exception as ex:
-        print(f"Failed to update pipeline adapters after unload: {ex}")
+        print(f"Failed to update pipeline adapters after unload (outer): {ex}")
