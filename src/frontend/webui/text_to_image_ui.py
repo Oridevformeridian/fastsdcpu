@@ -4,7 +4,8 @@ from backend.models.lcmdiffusion_setting import DiffusionTask
 from models.interface_types import InterfaceType
 from constants import DEVICE
 from state import get_settings, get_context
-from frontend.utils import is_reshape_required
+from frontend.utils import is_reshape_required, get_valid_lora_model
+from backend.lora import get_lora_models
 from concurrent.futures import ThreadPoolExecutor
 import json
 import urllib.request
@@ -155,7 +156,36 @@ def get_text_to_image_ui() -> None:
                     placeholder="",
                 )
 
-                input_params = [prompt, negative_prompt]
+                # LoRA controls (local to this generation)
+                lora_models_map = get_lora_models(
+                    app_settings.settings.lcm_diffusion_setting.lora.models_dir
+                )
+                valid_model = get_valid_lora_model(
+                    list(lora_models_map.values()),
+                    app_settings.settings.lcm_diffusion_setting.lora.path,
+                    app_settings.settings.lcm_diffusion_setting.lora.models_dir,
+                )
+                lora_choices = ["None"] + list(lora_models_map.keys())
+                lora_enabled = gr.Checkbox(
+                    label="Use LoRA",
+                    value=app_settings.settings.lcm_diffusion_setting.lora.enabled,
+                    interactive=True,
+                )
+                lora_model = gr.Dropdown(
+                    lora_choices,
+                    label="LoRA model",
+                    value=(valid_model if valid_model != "" else "None"),
+                    interactive=True,
+                )
+                lora_weight = gr.Slider(
+                    0.0,
+                    1.0,
+                    value=app_settings.settings.lcm_diffusion_setting.lora.weight,
+                    step=0.05,
+                    label="LoRA weight",
+                )
+
+                input_params = [prompt, negative_prompt, lora_enabled, lora_model, lora_weight]
 
             with gr.Column():
                 output = gr.Gallery(
@@ -165,8 +195,29 @@ def get_text_to_image_ui() -> None:
                     columns=2,
                     height=512,
                 )
+    def _wrap_generate(prompt, neg_prompt, lora_enabled_val, lora_model_val, lora_weight_val):
+        # Apply LoRA selection to settings for this generation
+        if app_settings.settings.lcm_diffusion_setting.use_openvino and lora_enabled_val:
+            from frontend.webui.errors import show_error as _show_err
+
+            _show_err("LoRA is not supported in OpenVINO mode.")
+            return None, "Error: LoRA not supported in OpenVINO"
+
+        lora_models_map_local = get_lora_models(
+            app_settings.settings.lcm_diffusion_setting.lora.models_dir
+        )
+        if lora_model_val != "None":
+            app_settings.settings.lcm_diffusion_setting.lora.path = lora_models_map_local.get(lora_model_val, "")
+            app_settings.settings.lcm_diffusion_setting.lora.weight = lora_weight_val
+            app_settings.settings.lcm_diffusion_setting.lora.enabled = lora_enabled_val
+        else:
+            app_settings.settings.lcm_diffusion_setting.lora.path = ""
+            app_settings.settings.lcm_diffusion_setting.lora.enabled = False
+
+        return generate_text_to_image(prompt, neg_prompt)
+
     generate_btn.click(
-        fn=generate_text_to_image,
+        fn=_wrap_generate,
         inputs=input_params,
         outputs=[output, status],
     )
