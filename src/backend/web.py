@@ -24,6 +24,7 @@ from backend.reviews_db import (
     delete_review,
     list_reviews,
 )
+import shutil
 from backend.queue_db import (
     init_db as init_queue_db,
     enqueue_job,
@@ -302,6 +303,51 @@ async def get_result_review(name: str):
         raise HTTPException(status_code=404, detail="No review metadata for this file")
 
     return ReviewResponse(name=name, status=entry.get("status"), note=entry.get("note"))
+
+
+@app.post(
+    "/api/results/{name}/archive",
+    description="Archive a generated result file",
+    summary="Archive result",
+)
+async def archive_result(name: str):
+    path = app_settings.settings.generated_images.path
+    if not path:
+        path = FastStableDiffusionPaths.get_results_path()
+
+    full = os.path.join(path, name)
+    if not os.path.isfile(full):
+        raise HTTPException(status_code=404, detail="Result file not found")
+
+    archive_dir = os.path.join(path, "archive")
+    try:
+        os.makedirs(archive_dir, exist_ok=True)
+    except Exception:
+        pass
+
+    dest = os.path.join(archive_dir, name)
+    try:
+        shutil.move(full, dest)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to archive file: {e}")
+
+    # Attempt to move corresponding metadata JSON if present. The JSON file
+    # uses the UUID base name (without -N suffix), so derive that name.
+    name_without_ext = os.path.splitext(name)[0]
+    if '-' in name_without_ext:
+        parts = name_without_ext.rsplit('-', 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            name_without_ext = parts[0]
+
+    json_name = name_without_ext + ".json"
+    json_full = os.path.join(path, json_name)
+    if os.path.isfile(json_full):
+        try:
+            shutil.move(json_full, os.path.join(archive_dir, json_name))
+        except Exception:
+            pass
+
+    return {"archived": True, "path": dest}
 
 
 @app.post(

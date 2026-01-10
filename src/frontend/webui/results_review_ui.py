@@ -126,6 +126,7 @@ def get_results_review_ui():
                         use_var_btn = gr.Button("🔄 Variations", size="sm", scale=1)
                         regen_btn = gr.Button("♻️ Regen", size="sm", scale=1)
                         show_json_btn = gr.Button("{ } JSON", size="sm", scale=1)
+                        archive_btn = gr.Button("📦 Archive", size="sm", scale=1)
                     
                     path_state = gr.State(value="")
 
@@ -225,6 +226,17 @@ def get_results_review_ui():
                 use_var_btn.click(fn=_use_variations, inputs=[path_state], outputs=[status_area])
                 show_json_btn.click(fn=_show_json, inputs=[path_state], outputs=[status_area])
                 regen_btn.click(fn=_regenerate, inputs=[path_state], outputs=[status_area])
+                def _archive(path):
+                    if not path:
+                        return "(no file)"
+                    name = os.path.basename(path)
+                    api_path = f"/api/results/{urllib.parse.quote(name)}/archive"
+                    resp = _api_post(api_path, {})
+                    if resp and resp.get("archived"):
+                        return f"Archived {name}"
+                    return f"Failed to archive {name}"
+
+                archive_btn.click(fn=_archive, inputs=[path_state], outputs=[status_area])
 
         # Bottom navigation (same as top)
         with gr.Row():
