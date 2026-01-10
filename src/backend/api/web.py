@@ -368,26 +368,7 @@ async def toggle_queue_pause_api():
     new_state = not current
     set_queue_paused(db_file, new_state)
     action = "paused" if new_state else "resumed"
-
-    # If we're resuming and there are no currently running jobs, try to claim one
-    claimed_job = None
-    if not new_state:
-        try:
-            # Check for any running jobs
-            running = list_queue_jobs(db_file, status="running")
-            if not running:
-                # No running jobs — attempt to pop the next queued job so processing starts immediately
-                claimed = pop_next_job(db_file)
-                if claimed:
-                    claimed_job = claimed.get("id")
-        except Exception as e:
-            # Don't fail the resume if this check/pop fails; log and continue
-            logging.warning(f"Resume attempted to claim a job but failed: {e}")
-
-    resp = {"paused": new_state, "message": f"Queue {action}"}
-    if claimed_job:
-        resp["claimed_job_id"] = claimed_job
-    return resp
+    return {"paused": new_state, "message": f"Queue {action}"}
 
 
 @app.get(
