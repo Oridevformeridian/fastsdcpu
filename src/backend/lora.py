@@ -168,3 +168,47 @@ def update_lora_weights(
     )
     adapter_weights = zip(adapter_names, adapter_weights)
     print(f"Adapters: {list(adapter_weights)}")
+
+
+def remove_loaded_lora(pipeline, lcm_diffusion_setting, adapter_name: str | None = None):
+    """
+    Remove a previously loaded LoRA adapter from the active adapters list.
+
+    If `adapter_name` is None, all loaded LoRAs are removed. Otherwise only the
+    specified adapter is removed. After updating the internal list, the
+    pipeline adapters are updated to reflect the change.
+    """
+    global _loaded_loras
+    global _current_pipeline
+    if pipeline != _current_pipeline:
+        print("Wrong pipeline when trying to unload LoRA weights")
+        return
+
+    if adapter_name:
+        # remove only matching adapter
+        new_loaded = [l for l in _loaded_loras if l.adapter_name != adapter_name]
+        if len(new_loaded) == len(_loaded_loras):
+            print(f"LoRA adapter {adapter_name} not found among loaded LoRAs")
+            return
+        _loaded_loras = new_loaded
+    else:
+        # remove all loaded loRAs
+        for l in _loaded_loras:
+            del l
+        _loaded_loras = []
+
+    # Rebuild adapter lists and apply to pipeline
+    adapter_names = []
+    adapter_weights = []
+    if lcm_diffusion_setting.use_lcm_lora:
+        adapter_names.append("lcm")
+        adapter_weights.append(1.0)
+    for l in _loaded_loras:
+        adapter_names.append(l.adapter_name)
+        adapter_weights.append(l.weight)
+
+    try:
+        pipeline.set_adapters(adapter_names, adapter_weights=adapter_weights)
+        print(f"Adapters after unload: {list(zip(adapter_names, adapter_weights))}")
+    except Exception as ex:
+        print(f"Failed to update pipeline adapters after unload: {ex}")

@@ -67,7 +67,9 @@ class LoraModelsWidget(QWidget):
                 config.settings.lcm_diffusion_setting.lora.models_dir
             )
         self.models_combobox = QComboBox()
-        self.models_combobox.addItems(lora_models_map.keys())
+        # Add a default "None" option so users can unload LoRAs
+        self.models_combobox.addItem("None")
+        self.models_combobox.addItems(list(lora_models_map.keys()))
         self.models_combobox.setToolTip(
             "<p style='white-space:pre'>Place LoRA models in the <b>lora_models</b> folder</p>"
         )
@@ -143,16 +145,53 @@ class LoraModelsWidget(QWidget):
         current_weight = self.weight_slider.getValue()
         print(f"Selected Lora Model :{current_lora}")
         print(f"Lora weight :{current_weight}")
+        if current_lora == "None":
+            settings.lora.path = ""
+            settings.lora.enabled = False
+            try:
+                if self.config:
+                    self.config.save()
+            except Exception:
+                pass
+            if self.parent.context.lcm_text_to_image.pipeline:
+                try:
+                    from backend.lora import remove_loaded_lora
+
+                    remove_loaded_lora(self.parent.context.lcm_text_to_image.pipeline, settings)
+                    QMessageBox.information(self.parent, "Info", "Unloaded LoRA(s) from current pipeline.")
+                except Exception:
+                    QMessageBox.information(
+                        self.parent,
+                        "Info",
+                        "LoRA settings saved; pipeline update failed. It will be applied on next generation.",
+                    )
+            else:
+                QMessageBox.information(
+                    self.parent,
+                    "Info",
+                    "LoRA settings saved; will be applied/unloaded on next generation.",
+                )
+            return
+
         settings.lora.path = lora_models_map[current_lora]
         settings.lora.weight = current_weight
         if not path.exists(settings.lora.path):
             QMessageBox.information(self.parent, "Error", "Invalid LoRA model path!")
             return
         if not self.parent.context.lcm_text_to_image.pipeline:
+            # Persist LoRA settings so they will be applied on next generation
+            # (e.g., when a queued job or a manual generate runs) rather than
+            # attempting a potentially expensive pipeline init here.
+            settings.lora.enabled = True
+            try:
+                if self.config:
+                    self.config.save()
+            except Exception:
+                pass
             QMessageBox.information(
                 self.parent,
-                "Error",
-                "Pipeline not initialized. Please generate an image first.",
+                "Info",
+                "Pipeline not initialized. LoRA saved to settings and will be applied on next generation.",
             )
             return
         settings.lora.enabled = True

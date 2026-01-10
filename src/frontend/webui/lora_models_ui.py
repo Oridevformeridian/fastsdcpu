@@ -55,18 +55,55 @@ def on_click_load_lora(lora_name, lora_weight):
     settings.lora.enabled = False
     print(f"Selected Lora Model :{lora_name}")
     print(f"Lora weight :{lora_weight}")
+    # Handle unload request
+    if lora_name == "None":
+        settings.lora.path = ""
+        settings.lora.enabled = False
+        try:
+            get_settings().save()
+        except Exception:
+            pass
+        ctx = get_context(InterfaceType.WEBUI)
+        pipeline = ctx.lcm_text_to_image.pipeline
+        if pipeline:
+            try:
+                from backend.lora import remove_loaded_lora
+
+                remove_loaded_lora(pipeline, settings)
+                gr.Info("Unloaded LoRA(s) from current pipeline.")
+            except Exception:
+                gr.Warning(
+                    "LoRA settings saved; pipeline update failed. It will be applied on next generation."
+                )
+        else:
+            gr.Info("LoRA settings saved; will be applied/unloaded on next generation.")
+        return
+
     settings.lora.path = lora_models_map[lora_name]
     settings.lora.weight = lora_weight
     if not path.exists(settings.lora.path):
         gr.Warning("Invalid LoRA model path!")
         return
-    pipeline = get_context(InterfaceType.WEBUI).lcm_text_to_image.pipeline
+    ctx = get_context(InterfaceType.WEBUI)
+    pipeline = ctx.lcm_text_to_image.pipeline
+    # If there's no initialized pipeline in the WebUI context, persist the
+    # selected LoRA into settings so it will be applied on the next
+    # generation (or next queued job) instead of attempting an expensive
+    # initialization here.
     if not pipeline:
-        gr.Warning("Pipeline not initialized. Please generate an image first.")
+        settings.lora.enabled = True
+        try:
+            get_settings().save()
+        except Exception:
+            pass
+        gr.Warning(
+            "Pipeline not initialized. LoRA saved to settings and will be applied on next generation."
+        )
         return
+
     settings.lora.enabled = True
     load_lora_weight(
-        get_context(InterfaceType.WEBUI).lcm_text_to_image.pipeline,
+        ctx.lcm_text_to_image.pipeline,
         settings,
     )
 
@@ -111,11 +148,13 @@ def get_lora_models_ui() -> None:
                     else:
                         app_settings.settings.lcm_diffusion_setting.lora.path = ""
 
+                    # Add a default "None" option so users can unload LoRAs
+                    lora_choices = ["None"] + list(lora_models_map.keys())
                     lora_model = gr.Dropdown(
-                        lora_models_map.keys(),
+                        lora_choices,
                         label="LoRA model",
-                        info="LoRA model weight to load (You can use Lora models from Civitai or Hugging Face .safetensors format)",
-                        value=valid_model,
+                        info="LoRA model weight to load (You can use LoRA models from Civitai or Hugging Face .safetensors format). Select 'None' to unload LoRAs.",
+                        value=(valid_model if valid_model != "" else "None"),
                         interactive=True,
                     )
 
