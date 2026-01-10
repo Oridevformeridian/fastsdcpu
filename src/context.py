@@ -1,3 +1,29 @@
+"""
+Temporary monkey-patch: add no-op LoRA adapter methods to
+`torch.nn.Conv2d` to avoid AttributeError during LoRA load/unload
+when third-party PEFT/diffusers code calls adapter management
+methods on modules that are plain Conv2d instances.
+
+Keep this as a short-term workaround; remove once upstream
+libraries are fixed or versions are aligned.
+"""
+
+try:
+    import torch.nn as _nn
+
+    def _lora_noop(self, *args, **kwargs):
+        return None
+
+    if not hasattr(_nn.Conv2d, "delete_adapter"):
+        _nn.Conv2d.delete_adapter = _lora_noop
+    if not hasattr(_nn.Conv2d, "add_adapter"):
+        _nn.Conv2d.add_adapter = _lora_noop
+    if not hasattr(_nn.Conv2d, "merge_adapter"):
+        _nn.Conv2d.merge_adapter = _lora_noop
+except Exception as _ex:
+    # Non-fatal: if torch isn't available at import-time, we'll skip.
+    print(f"Warning: Conv2d adapter monkey-patch skipped: {_ex}")
+
 from pprint import pprint
 from time import perf_counter
 from traceback import print_exc
