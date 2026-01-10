@@ -68,6 +68,44 @@ app.add_middleware(
 )
 context = Context(InterfaceType.API_SERVER)
 
+
+def _log_memory_stats(*args, phase: str = None):
+    """Safe memory/process logging helper.
+
+    Supports being called as `_log_memory_stats(phase="worker_startup")`
+    or `_log_memory_stats(job_id, "job_start")` to match existing usage.
+    This helper never raises.
+    """
+    try:
+        job_id = None
+        ph = phase
+        if len(args) == 1 and isinstance(args[0], str) and phase is None:
+            ph = args[0]
+        elif len(args) >= 1:
+            job_id = args[0]
+            if len(args) >= 2:
+                ph = args[1]
+
+        vm = psutil.virtual_memory()
+        proc = psutil.Process()
+        mem = proc.memory_info()
+        msg = (
+            f"[mem] phase={ph} job_id={job_id} "
+            f"available={vm.available} free_percent={100 - vm.percent:.1f} "
+            f"rss={getattr(mem, 'rss', 'n/a')} vms={getattr(mem, 'vms', 'n/a')}"
+        )
+        if DEBUG_ENABLED:
+            print(msg)
+        else:
+            logging.debug(msg)
+    except Exception:
+        # Never let memory logging bring down the worker
+        try:
+            logging.exception("_log_memory_stats failed")
+        except Exception:
+            pass
+
+
 # Log system resources at startup
 try:
     vm = psutil.virtual_memory()
