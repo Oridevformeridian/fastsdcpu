@@ -7,3 +7,6 @@ results
 # excluding user settings for the GUI frontend
 configs/settings.yaml
 queue.db
+
+# Ignore diagnostic scripts we upload to remote hosts
+scripts/
