@@ -122,6 +122,13 @@ def pop_next_job(db_path: str) -> Optional[dict]:
             ("running", now, job["id"]),
         )
         conn.commit()
+        # Reflect the DB change in the returned dict so callers see started_at/status
+        job["status"] = "running"
+        job["started_at"] = now
+        try:
+            print(f"[queue_db] Claimed job {job['id']} at {now}")
+        except Exception:
+            pass
         return job
     finally:
         conn.close()

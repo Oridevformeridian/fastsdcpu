@@ -490,12 +490,26 @@ def _queue_worker_loop_api(poll_interval: float = 1.0):
                 time.sleep(poll_interval)
                 continue
             
+            # Log that worker is attempting to claim the next job
+            try:
+                print(f"[worker] calling pop_next_job() (poll_interval={poll_interval})")
+            except Exception:
+                pass
             job = pop_next_job(db_file)
             if not job:
+                # No job claimed
+                try:
+                    print("[worker] no queued job found, sleeping")
+                except Exception:
+                    pass
                 time.sleep(poll_interval)
                 continue
             
             job_id = job["id"]
+            try:
+                print(f"[worker] claimed job {job_id} (retry_count={job.get('retry_count',0)}) started_at={job.get('started_at')}")
+            except Exception:
+                pass
             retry_count = job.get("retry_count", 0)
             retry_note = f" (retry #{retry_count})" if retry_count > 0 else ""
             print(f"Processing job {job_id}{retry_note}")

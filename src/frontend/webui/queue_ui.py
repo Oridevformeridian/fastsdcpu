@@ -199,9 +199,9 @@ def get_queue_ui():
                 if not show_completed_filter and job_status in ("done", "failed", "cancelled"):
                     continue
                 
-                # Show retry count for queued jobs that have been retried
+                # Show retry count as 'rerunning' only when the job is actively running
                 retry_count = j.get("retry_count", 0)
-                if job_status == "queued" and retry_count > 0:
+                if job_status == "running" and retry_count > 0:
                     status_display = f"rerunning({retry_count})"
                 else:
                     status_display = job_status
