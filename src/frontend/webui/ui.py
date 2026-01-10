@@ -58,10 +58,13 @@ def get_web_ui() -> gr.Blocks:
         elif mode == "GGUF":
             app_settings.settings.lcm_diffusion_setting.use_gguf_model = True
 
-    # Prevent saved LoRA and ControlNet settings from being used by
-    # default; in WebUI mode, the user must explicitly enable those
+    # Preserve saved LoRA state across restarts: only disable LoRA on
+    # startup when there is no saved LoRA path. ControlNet remains
+    # disabled by default in the WebUI to avoid surprise behavior.
     if app_settings.settings.lcm_diffusion_setting.lora:
-        app_settings.settings.lcm_diffusion_setting.lora.enabled = False
+        lora_cfg = app_settings.settings.lcm_diffusion_setting.lora
+        if not lora_cfg.path:
+            lora_cfg.enabled = False
     if app_settings.settings.lcm_diffusion_setting.controlnet:
         app_settings.settings.lcm_diffusion_setting.controlnet.enabled = False
     theme = gr.themes.Default(
