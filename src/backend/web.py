@@ -25,6 +25,7 @@ from backend.reviews_db import (
     list_reviews,
 )
 import shutil
+import urllib.parse
 from backend.queue_db import (
     init_db as init_queue_db,
     enqueue_job,
@@ -311,13 +312,31 @@ async def get_result_review(name: str):
     summary="Archive result",
 )
 async def archive_result(name: str):
+    # Decode any URL-encoded filename components
+    name = urllib.parse.unquote(name)
+    # Guard against accidental absolute paths
+    name = name.lstrip("/")
+
     path = app_settings.settings.generated_images.path
     if not path:
         path = FastStableDiffusionPaths.get_results_path()
 
     full = os.path.join(path, name)
+    # Debug info to help diagnose missing-file issues
+    print(f"Archive request: name={name}, full={full}, exists={os.path.isfile(full)}")
+
     if not os.path.isfile(full):
-        raise HTTPException(status_code=404, detail="Result file not found")
+        # Fallback: try to find a file whose basename matches the requested name
+        try:
+            for f in os.listdir(path):
+                if f == name:
+                    full = os.path.join(path, f)
+                    break
+        except Exception:
+            pass
+
+    if not os.path.isfile(full):
+        raise HTTPException(status_code=404, detail=f"Result file not found: attempted {full}")
 
     archive_dir = os.path.join(path, "archive")
     try:
