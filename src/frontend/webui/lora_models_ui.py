@@ -24,8 +24,20 @@ def on_click_update_weight(*lora_weights):
     update_weights = []
     active_weights = get_active_lora_weights()
     if not len(active_weights):
-        gr.Warning("No active LoRAs, first you need to load LoRA model")
-        return
+        # Try to auto-load saved LoRA into the current pipeline if possible
+        ctx = get_context(InterfaceType.WEBUI)
+        pipeline = ctx.lcm_text_to_image.pipeline
+        settings = app_settings.settings.lcm_diffusion_setting
+        if pipeline and settings.lora and settings.lora.enabled and settings.lora.path:
+            try:
+                from backend.lora import load_lora_weight
+
+                load_lora_weight(pipeline, settings)
+                active_weights = get_active_lora_weights()
+            except Exception:
+                pass
+        if not len(active_weights):
+            return [gr.Markdown.update(value="**LoRA enabled:** False (no adapters loaded)")]
     for idx, lora in enumerate(active_weights):
         update_weights.append(
             (
@@ -39,6 +51,8 @@ def on_click_update_weight(*lora_weights):
             app_settings.settings.lcm_diffusion_setting,
             update_weights,
         )
+    # return status update
+    return [gr.Markdown.update(value=f"**LoRA enabled:** {len(get_active_lora_weights())>0}")]
 
 
 def on_click_load_lora(lora_name, lora_weight):
