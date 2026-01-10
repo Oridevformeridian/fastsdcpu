@@ -43,6 +43,8 @@ import threading
 import time
 import json
 import json
+import shutil
+import urllib.parse
 
 app_settings = get_settings()
 app = FastAPI(
@@ -357,6 +359,68 @@ async def enqueue_api(diffusion_config: LCMDiffusionSetting):
         raise HTTPException(status_code=500, detail=f"Failed to enqueue job: {e}")
     
     return {"job_id": job_id, "status": "queued", "payload_json_path": json_path}
+
+
+@app.post(
+    "/api/results/{name}/archive",
+    description="Archive a generated result file",
+    summary="Archive result",
+)
+async def archive_result_api(name: str):
+    # Decode any URL-encoded filename components
+    name = urllib.parse.unquote(name)
+    # Guard against accidental absolute paths
+    name = name.lstrip("/")
+
+    path = app_settings.settings.generated_images.path
+    if not path:
+        path = FastStableDiffusionPaths.get_results_path()
+
+    full = os.path.join(path, name)
+    # Debug info to help diagnose missing-file issues
+    print(f"Archive request(api): name={name}, full={full}, exists={os.path.isfile(full)}")
+
+    if not os.path.isfile(full):
+        # Fallback: try to find a file whose basename matches the requested name
+        try:
+            for f in os.listdir(path):
+                if f == name:
+                    full = os.path.join(path, f)
+                    break
+        except Exception:
+            pass
+
+    if not os.path.isfile(full):
+        raise HTTPException(status_code=404, detail=f"Result file not found: attempted {full}")
+
+    archive_dir = os.path.join(path, "archive")
+    try:
+        os.makedirs(archive_dir, exist_ok=True)
+    except Exception:
+        pass
+
+    dest = os.path.join(archive_dir, name)
+    try:
+        shutil.move(full, dest)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to archive file: {e}")
+
+    # Attempt to move corresponding metadata JSON if present. Derive base UUID name.
+    name_without_ext = os.path.splitext(name)[0]
+    if '-' in name_without_ext:
+        parts = name_without_ext.rsplit('-', 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            name_without_ext = parts[0]
+
+    json_name = name_without_ext + ".json"
+    json_full = os.path.join(path, json_name)
+    if os.path.isfile(json_full):
+        try:
+            shutil.move(json_full, os.path.join(archive_dir, json_name))
+        except Exception:
+            pass
+
+    return {"archived": True, "path": dest}
 
 
 @app.get(
