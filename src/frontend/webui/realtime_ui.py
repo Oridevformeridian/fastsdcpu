@@ -144,4 +144,4 @@ with gr.Blocks(css=css) as demo:
 
 def start_realtime_text_to_image(share=False):
     demo.queue()
-    demo.launch(share=share)
+    demo.launch(server_name="0.0.0.0", share=share)

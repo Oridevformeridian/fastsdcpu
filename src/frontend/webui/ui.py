@@ -133,4 +133,4 @@ def start_webui(
 ):
     webui = get_web_ui()
     webui.queue()
-    webui.launch(share=share)
+    webui.launch(server_name="0.0.0.0", share=share)
