@@ -55,6 +55,11 @@ def on_click_load_lora(lora_name, lora_weight):
     settings.lora.enabled = False
     print(f"Selected Lora Model :{lora_name}")
     print(f"Lora weight :{lora_weight}")
+    # precompute dynamic outputs count for early returns
+    outputs_count = len(_custom_lora_names) + len(_custom_lora_sliders) + len(_custom_lora_columns)
+    def _empty_outputs_with_status(text):
+        return [None] * outputs_count + [gr.Markdown.update(value=text)]
+
     # Handle unload request
     if lora_name == "None":
         settings.lora.path = ""
@@ -70,14 +75,12 @@ def on_click_load_lora(lora_name, lora_weight):
                 from backend.lora import remove_loaded_lora
 
                 remove_loaded_lora(pipeline, settings)
-                gr.Info("Unloaded LoRA(s) from current pipeline.")
+                # return empty updates + status
+                return _empty_outputs_with_status("**LoRA enabled:** False")
             except Exception:
-                gr.Warning(
-                    "LoRA settings saved; pipeline update failed. It will be applied on next generation."
-                )
+                return _empty_outputs_with_status("**LoRA enabled:** False")
         else:
-            gr.Info("LoRA settings saved; will be applied/unloaded on next generation.")
-        return
+            return _empty_outputs_with_status("**LoRA enabled:** False")
 
     settings.lora.path = lora_models_map[lora_name]
     settings.lora.weight = lora_weight
@@ -96,10 +99,7 @@ def on_click_load_lora(lora_name, lora_weight):
             get_settings().save()
         except Exception:
             pass
-        gr.Warning(
-            "Pipeline not initialized. LoRA saved to settings and will be applied on next generation."
-        )
-        return
+        return _empty_outputs_with_status("**LoRA enabled:** True (will apply on next generation)")
 
     settings.lora.enabled = True
     load_lora_weight(
@@ -121,7 +121,9 @@ def on_click_load_lora(lora_name, lora_weight):
         labels.append(f"Update weight")
         values.append(0.0)
         rows.append(gr.Row.update(visible=False))
-    return labels + values + rows
+    # Append status update to outputs
+    status_text = f"**LoRA enabled:** {settings.lora.enabled}"
+    return labels + values + rows + [gr.Markdown.update(value=status_text)]
 
 
 def get_lora_models_ui() -> None:
@@ -166,6 +168,11 @@ def get_lora_models_ui() -> None:
                         label="Initial Lora weight",
                         interactive=True,
                     )
+                    # Status indicator showing whether saved LoRA is enabled
+                    lora_status = gr.Markdown(
+                        f"**LoRA enabled:** {app_settings.settings.lcm_diffusion_setting.lora.enabled}",
+                        elem_id="lora_status",
+                    )
                     load_lora_btn = gr.Button(
                         "Load selected LoRA",
                         elem_id="load_lora_button",
@@ -207,6 +214,7 @@ def get_lora_models_ui() -> None:
                         _custom_lora_names.append(lora_name)
                         _custom_lora_sliders.append(lora_slider)
 
+    # The load handler updates the dynamic LoRA rows plus the status element
     load_lora_btn.click(
         fn=on_click_load_lora,
         inputs=[lora_model, lora_weight],
@@ -214,6 +222,7 @@ def get_lora_models_ui() -> None:
             *_custom_lora_names,
             *_custom_lora_sliders,
             *_custom_lora_columns,
+            lora_status,
         ],
     )
 
