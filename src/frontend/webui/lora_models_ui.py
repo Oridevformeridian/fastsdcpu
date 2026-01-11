@@ -1,5 +1,7 @@
 import gradio as gr
 from os import path
+import os
+import shutil
 from backend.lora import (
     get_lora_models,
     get_active_lora_weights,
@@ -193,6 +195,15 @@ def get_lora_models_ui() -> None:
                         scale=0,
                     )
 
+                    # Upload and default controls
+                    upload_files = gr.File(
+                        file_count="multiple",
+                        label="Upload LoRA (.safetensors)",
+                        interactive=True,
+                    )
+                    upload_btn = gr.Button("Upload LoRA(s)")
+                    set_default_btn = gr.Button("Set selected as Default")
+
                 with gr.Row():
                     gr.Markdown(
                         "## Loaded LoRA models",
@@ -238,6 +249,88 @@ def get_lora_models_ui() -> None:
             *_custom_lora_columns,
             lora_status,
         ],
+    )
+
+    def _on_upload_lora(files):
+        """Save uploaded safetensors into the LoRA models directory and refresh list."""
+        if not files:
+            return gr.Dropdown.update(), gr.Markdown.update(value="No files uploaded")
+        dest_dir = app_settings.settings.lcm_diffusion_setting.lora.models_dir
+        saved = []
+        try:
+            os.makedirs(dest_dir, exist_ok=True)
+            # files may be a list of temp file dicts or a single file
+            file_list = files if isinstance(files, list) else [files]
+            for f in file_list:
+                # Gradio file object can be a dict-like or have .name and .file
+                try:
+                    fname = f.name
+                    fobj = f.file
+                except Exception:
+                    # fallback for older gradio versions
+                    fname = os.path.basename(f["name"]) if isinstance(f, dict) else getattr(f, "name", "")
+                    fobj = f["file"] if isinstance(f, dict) else getattr(f, "file", None)
+                if not fname.lower().endswith(".safetensors"):
+                    continue
+                dest = os.path.join(dest_dir, fname)
+                # move/copy file
+                try:
+                    if hasattr(fobj, "name") and os.path.exists(fobj.name):
+                        shutil.copyfile(fobj.name, dest)
+                    else:
+                        # fobj may be a file-like object
+                        with open(dest, "wb") as out_f:
+                            shutil.copyfileobj(fobj, out_f)
+                    saved.append(fname)
+                except Exception as ex:
+                    print(f"Failed to save uploaded LoRA {fname}: {ex}")
+            # rebuild model list
+            lora_models_map = get_lora_models(dest_dir)
+            lora_choices = ["None"] + list(lora_models_map.keys())
+            # choose first saved as selected
+            sel = None
+            if len(saved) > 0 and saved[0] in lora_models_map:
+                sel = saved[0]
+            else:
+                # try to keep current valid
+                valid_model = get_valid_lora_model(
+                    list(lora_models_map.values()),
+                    app_settings.settings.lcm_diffusion_setting.lora.path,
+                    dest_dir,
+                )
+                sel = valid_model if valid_model != "" else "None"
+            return gr.Dropdown.update(choices=lora_choices, value=sel), gr.Markdown.update(value=f"Uploaded: {saved}")
+        except Exception as ex:
+            return gr.Dropdown.update(), gr.Markdown.update(value=f"Upload failed: {ex}")
+
+    def _on_set_default(model_name):
+        if not model_name or model_name == "None":
+            app_settings.settings.lcm_diffusion_setting.lora.path = ""
+            try:
+                get_settings().save()
+            except Exception:
+                pass
+            return gr.Markdown.update(value="Default LoRA cleared")
+        lora_models_map = get_lora_models(app_settings.settings.lcm_diffusion_setting.lora.models_dir)
+        if model_name not in lora_models_map:
+            return gr.Markdown.update(value="Model not found to set as default")
+        app_settings.settings.lcm_diffusion_setting.lora.path = lora_models_map[model_name]
+        try:
+            get_settings().save()
+        except Exception:
+            pass
+        return gr.Markdown.update(value=f"Default LoRA set to: {model_name}")
+
+    upload_btn.click(
+        fn=_on_upload_lora,
+        inputs=[upload_files],
+        outputs=[lora_model, lora_status],
+    )
+
+    set_default_btn.click(
+        fn=_on_set_default,
+        inputs=[lora_model],
+        outputs=[lora_status],
     )
 
     update_lora_weights_btn.click(
