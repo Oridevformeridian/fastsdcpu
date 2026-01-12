@@ -61,15 +61,57 @@ class ImageSaver:
                 image_file_name = f"{gen_id}-{index+1}{image_extension}"
                 image_ids.append(image_file_name)
                 image_path = path.join(out_path, image_file_name)
-                image.save(image_path, quality = jpeg_quality)
-                # Force flush to disk to prevent file contention issues
+                # Save to a temp file first, fsync the file, then atomically replace
+                # the final filename. This avoids a race where a reader may observe
+                # a truncated/zero-length file while PIL is writing.
                 try:
                     import os
-                    fd = os.open(image_path, os.O_RDONLY)
-                    os.fsync(fd)
-                    os.close(fd)
+                    temp_name = f".{image_file_name}.tmp"
+                    temp_path = path.join(out_path, temp_name)
+                    # Ensure any existing temp is removed
+                    try:
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+                    except Exception:
+                        pass
+
+                    # Use PIL to save to the temp path
+                    image.save(temp_path, quality=jpeg_quality)
+
+                    # Flush and sync temp file to disk
+                    try:
+                        with open(temp_path, "rb") as tf:
+                            tf.flush()
+                            try:
+                                os.fsync(tf.fileno())
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+
+                    # Atomically move temp into final path
+                    try:
+                        os.replace(temp_path, image_path)
+                    except Exception:
+                        # fallback to rename
+                        try:
+                            os.rename(temp_path, image_path)
+                        except Exception:
+                            pass
+
+                    # Sync directory metadata so new file is visible to readers
+                    try:
+                        dir_fd = os.open(out_path, os.O_RDONLY)
+                        os.fsync(dir_fd)
+                        os.close(dir_fd)
+                    except Exception:
+                        pass
                 except Exception:
-                    pass  # Best effort
+                    # If anything goes wrong, attempt a best-effort save to final path
+                    try:
+                        image.save(image_path, quality=jpeg_quality)
+                    except Exception:
+                        pass
             if lcm_diffusion_setting:
                 data = lcm_diffusion_setting.model_dump(exclude=get_exclude_keys())
                 if image_seeds:

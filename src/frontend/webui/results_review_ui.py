@@ -89,6 +89,7 @@ def get_results_review_ui():
             prev_btn_top = gr.Button("←", scale=0, min_width=50)
             page_indicator = gr.Markdown("Page 1")
             next_btn_top = gr.Button("→", scale=0, min_width=50)
+            reload_btn = gr.Button("🔄 Reload Images", size="sm")
             show_failed = gr.Checkbox(label="Show Failed Images", value=True)
             
         # Preview gallery at top (hidden on desktop)
@@ -112,7 +113,7 @@ def get_results_review_ui():
             with gr.Row(variant="panel"):
                 with gr.Column(scale=2):
                     # Image as download button
-                    img = gr.Image(value=None, type="filepath", interactive=False, height=300, show_download_button=True, show_label=False)
+                    img = gr.Image(value=None, type="url", interactive=False, height=300, show_download_button=True, show_label=False)
                 
                 with gr.Column(scale=3):
                     name_tb = gr.Textbox(value="", label="File", interactive=False)
@@ -280,9 +281,13 @@ def get_results_review_ui():
                 if i < len(payload.get("results", [])):
                     item = payload["results"][i]
                     name = item.get("name")
-                    # Use local file path instead of URL to avoid safehttpx validation issues
+                    # Prefer cache-busted HTTP URL to force browser reloads
                     local_path = os.path.join(results_path, name)
                     file_exists = os.path.exists(local_path)
+                    image_url = None
+                    if file_exists:
+                        # include mtime to bust cache
+                        image_url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(name)}?t={int(item.get('mtime', 0))}"
                     if DEBUG_ENABLED:
                         print(f"[DEBUG-UI] Image {i}: name={name}, path={local_path}, exists={file_exists}")
                     
@@ -296,8 +301,8 @@ def get_results_review_ui():
                     model_val = item.get("meta", {}).get("model", "") or item.get("meta", {}).get("openvino_model", "")
                     if DEBUG_ENABLED:
                         print(f"[DEBUG-UI]   prompt={prompt_val[:50] if prompt_val else 'EMPTY'}, model={model_val}")
-                    page_paths.append(local_path if file_exists else None)
-                    out.extend([local_path if file_exists else None, name, mtime, prompt_val, model_val, local_path])
+                    page_paths.append(image_url if file_exists else None)
+                    out.extend([image_url if file_exists else None, name, mtime, prompt_val, model_val, local_path])
                 else:
                     out.extend([None, "", "", "", "", ""]) 
             return tuple([page_paths] + out)

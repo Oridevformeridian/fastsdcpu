@@ -2,9 +2,11 @@ import platform
 import os
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import urllib.parse
 
 from backend.api.models.response import StableDiffusionResponse
 from backend.base64_image import base64_image_to_pil, pil_image_to_base64_str
@@ -26,7 +28,6 @@ from backend.reviews_db import (
     list_reviews,
 )
 import shutil
-import urllib.parse
 from backend.queue_db import (
     init_db as init_queue_db,
     enqueue_job,
@@ -108,7 +109,46 @@ if not os.path.exists(results_path):
     except Exception:
         pass
 
-app.mount("/results", StaticFiles(directory=results_path), name="results")
+
+# Serve generated result files with request-time logging so we can capture
+# failures (connection resets, truncated reads). This replaces the previous
+# StaticFiles mount to allow logging of client info and file metadata.
+@app.get("/results/{file_path:path}")
+async def serve_result(file_path: str, request: Request):
+    # decode any URL-encoding and sanitize path
+    file_path_decoded = urllib.parse.unquote(file_path)
+    safe_path = os.path.normpath(file_path_decoded).lstrip(os.sep)
+    full = os.path.join(results_path, safe_path)
+    client = None
+    try:
+        client = request.client.host if request.client else "unknown"
+    except Exception:
+        client = "unknown"
+    print(f"[RESULTS] request from {client} path={file_path_decoded} full={full}")
+
+    if not os.path.isfile(full):
+        print(f"[RESULTS] not found: {full}")
+        raise HTTPException(status_code=404, detail="Result file not found")
+
+    try:
+        stat = os.stat(full)
+        print(f"[RESULTS] serving {full} size={stat.st_size} mtime={stat.st_mtime}")
+        # log a prefix of the file bytes to validate content on problematic requests
+        try:
+            with open(full, "rb") as f:
+                prefix = f.read(128)
+                if prefix:
+                    print(f"[RESULTS] prefix_hex={prefix.hex()[:400]}")
+                else:
+                    print(f"[RESULTS] prefix_hex=(empty)")
+        except Exception as e:
+            print(f"[RESULTS] failed reading prefix: {e}")
+
+        headers = {"X-Result-Size": str(stat.st_size)}
+        return FileResponse(full, headers=headers)
+    except Exception as e:
+        print(f"[RESULTS] error serving {full}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/")
@@ -206,7 +246,7 @@ async def list_results():
     reviews = list_reviews(db_file)
 
     files = []
-    entries = [e for e in os.listdir(path) if os.path.isfile(os.path.join(path, e))]
+    entries = [e for e in os.listdir(path) if os.path.isfile(os.path.join(path, e)) and os.stat(os.path.join(path, e)).st_size > 0]
     # sort by modification time (newest first)
     entries.sort(key=lambda e: os.stat(os.path.join(path, e)).st_mtime, reverse=True)
 
@@ -262,8 +302,9 @@ async def list_results_paged(page: int = 0, size: int = 20):
 
     # Only list image files (jpg, png)
     all_entries = [
-        e for e in os.listdir(path) 
-        if os.path.isfile(os.path.join(path, e)) 
+        e for e in os.listdir(path)
+        if os.path.isfile(os.path.join(path, e))
+        and os.stat(os.path.join(path, e)).st_size > 0
         and (e.lower().endswith('.jpg') or e.lower().endswith('.png') or e.lower().endswith('.jpeg'))
     ]
     all_entries.sort(key=lambda e: os.stat(os.path.join(path, e)).st_mtime, reverse=True)
