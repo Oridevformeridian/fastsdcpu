@@ -347,6 +347,31 @@ class LCMTextToImage:
                     )
 
                 # Prepare alternative generation pipelines using the newly
+
+                # If user saved a local LoRA via the UI while no pipeline
+                # existed, apply it now so "apply on next generation" works
+                # as expected. Skip for OpenVINO mode.
+                try:
+                    if (
+                        not self.use_openvino
+                        and lcm_diffusion_setting.lora
+                        and lcm_diffusion_setting.lora.enabled
+                        and lcm_diffusion_setting.lora.path
+                    ):
+                        # import locally to avoid top-level dependency
+                        from backend.lora import load_lora_weight, get_active_lora_weights
+                        from pathlib import Path
+
+                        adapter_name = Path(str(lcm_diffusion_setting.lora.path)).stem
+                        active = get_active_lora_weights()
+                        # Only load if adapter not already active
+                        if not any(a[0] == adapter_name for a in active):
+                            try:
+                                load_lora_weight(self.pipeline, lcm_diffusion_setting)
+                            except Exception as _ex:
+                                print(f"Failed to auto-load saved LoRA on init: {_ex}")
+                except Exception as _ex:
+                    print(f"Error while applying saved LoRA on init: {_ex}")
                 # created pipeline from which all extra pipelines are derived
                 self.txt2img_pipeline = self.pipeline
                 self.img2img_pipeline = get_image_to_image_pipeline(self.pipeline)
