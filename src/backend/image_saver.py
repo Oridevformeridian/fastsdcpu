@@ -65,9 +65,9 @@ class ImageSaver:
                 # the final filename. This avoids a race where a reader may observe
                 # a truncated/zero-length file while PIL is writing.
                 try:
-                    import os
                     temp_name = f".{image_file_name}.tmp"
                     temp_path = path.join(out_path, temp_name)
+
                     # Ensure any existing temp is removed
                     try:
                         if os.path.exists(temp_path):
@@ -75,29 +75,75 @@ class ImageSaver:
                     except Exception:
                         pass
 
-                    # Use PIL to save to the temp path
-                    image.save(temp_path, quality=jpeg_quality)
-
-                    # Flush and sync temp file to disk
-                    try:
-                        with open(temp_path, "rb") as tf:
-                            tf.flush()
+                    # Attempt to save and validate the temp file before promoting
+                    attempts = 0
+                    max_attempts = 3
+                    saved_ok = False
+                    while attempts < max_attempts and not saved_ok:
+                        attempts += 1
+                        try:
+                            image.save(temp_path, quality=jpeg_quality)
+                        except Exception as e:
+                            print(f"[ImageSaver] save attempt {attempts} failed: {e}")
                             try:
-                                os.fsync(tf.fileno())
+                                if os.path.exists(temp_path):
+                                    os.remove(temp_path)
                             except Exception:
                                 pass
-                    except Exception:
-                        pass
+                            time.sleep(0.1)
+                            continue
 
-                    # Atomically move temp into final path
-                    try:
-                        os.replace(temp_path, image_path)
-                    except Exception:
-                        # fallback to rename
+                        # Flush and sync temp file to disk
                         try:
-                            os.rename(temp_path, image_path)
+                            with open(temp_path, "rb") as tf:
+                                tf.flush()
+                                try:
+                                    os.fsync(tf.fileno())
+                                except Exception:
+                                    pass
                         except Exception:
                             pass
+
+                        # Quick validation: check file non-empty and magic header
+                        try:
+                            stat_tmp = os.stat(temp_path)
+                            if stat_tmp.st_size > 16:
+                                with open(temp_path, "rb") as hf:
+                                    prefix = hf.read(8)
+                                # PNG signature or JPEG SOI
+                                if prefix.startswith(b"\x89PNG\r\n\x1a\n") or prefix.startswith(b"\xff\xd8"):
+                                    saved_ok = True
+                                    break
+                        except Exception:
+                            pass
+
+                        # If validation failed, remove and retry
+                        try:
+                            if os.path.exists(temp_path):
+                                os.remove(temp_path)
+                        except Exception:
+                            pass
+                        time.sleep(0.1)
+
+                    if not saved_ok:
+                        print(f"[ImageSaver] failed to produce valid temp file for {image_file_name} after {max_attempts} attempts")
+
+                    # Atomically move temp into final path if present
+                    try:
+                        if os.path.exists(temp_path):
+                            os.replace(temp_path, image_path)
+                        else:
+                            # temp missing; best-effort save directly
+                            image.save(image_path, quality=jpeg_quality)
+                    except Exception:
+                        # fallback to rename or direct save
+                        try:
+                            if os.path.exists(temp_path):
+                                os.rename(temp_path, image_path)
+                            else:
+                                image.save(image_path, quality=jpeg_quality)
+                        except Exception as e:
+                            print(f"[ImageSaver] promotion failed for {image_file_name}: {e}")
 
                     # Sync directory metadata so new file is visible to readers
                     try:
