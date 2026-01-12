@@ -298,12 +298,24 @@ def get_lora_models_ui() -> None:
                 dest = os.path.join(dest_dir, fname)
                 # move/copy file
                 try:
+                    # Ensure destination directory permissions are permissive
+                    try:
+                        os.makedirs(dest_dir, exist_ok=True, mode=0o755)
+                    except Exception:
+                        # best-effort; continue even if setting mode fails
+                        os.makedirs(dest_dir, exist_ok=True)
+
                     if hasattr(fobj, "name") and os.path.exists(fobj.name):
                         shutil.copyfile(fobj.name, dest)
                     else:
                         # fobj may be a file-like object
                         with open(dest, "wb") as out_f:
                             shutil.copyfileobj(fobj, out_f)
+                    # Ensure uploaded file has readable permissions
+                    try:
+                        os.chmod(dest, 0o644)
+                    except Exception:
+                        pass
                     saved.append(fname)
                 except Exception as ex:
                     print(f"Failed to save uploaded LoRA {fname}: {ex}")
