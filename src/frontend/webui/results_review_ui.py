@@ -113,7 +113,7 @@ def get_results_review_ui():
             with gr.Row(variant="panel"):
                 with gr.Column(scale=2):
                     # Image as download button
-                    img = gr.Image(value=None, type="url", interactive=False, height=300, show_download_button=True, show_label=False)
+                    img = gr.Image(value=None, type="filepath", interactive=False, height=300, show_download_button=True, show_label=False)
                 
                 with gr.Column(scale=3):
                     name_tb = gr.Textbox(value="", label="File", interactive=False)
@@ -286,8 +286,8 @@ def get_results_review_ui():
                     file_exists = os.path.exists(local_path)
                     image_url = None
                     if file_exists:
-                        # include mtime to bust cache
-                        image_url = API_BASE.rstrip("/") + f"/results/{urllib.parse.quote(name)}?t={int(item.get('mtime', 0))}"
+                        # keep using local file paths for Gradio image component
+                        image_url = local_path
                     if DEBUG_ENABLED:
                         print(f"[DEBUG-UI] Image {i}: name={name}, path={local_path}, exists={file_exists}")
                     
