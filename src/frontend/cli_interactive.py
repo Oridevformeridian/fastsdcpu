@@ -12,6 +12,7 @@ from backend.lora import (
     update_lora_weights,
     load_lora_weight,
 )
+from backend.pipeline_lock import pipeline_lock
 from backend.controlnet import get_controlnet_pipeline
 from backend.models.lcmdiffusion_setting import (
     DiffusionTask,
@@ -238,11 +239,15 @@ def interactive_lora(
                 )
             )
         if len(update_weights) > 0:
-            update_lora_weights(
-                context.lcm_text_to_image.pipeline,
-                config.lcm_diffusion_setting,
-                update_weights,
-            )
+            try:
+                with pipeline_lock:
+                    update_lora_weights(
+                        context.lcm_text_to_image.pipeline,
+                        config.lcm_diffusion_setting,
+                        update_weights,
+                    )
+            except Exception:
+                pass
     elif option == 2:
         # Load a new LoRA
         settings = config.lcm_diffusion_setting
@@ -258,7 +263,11 @@ def interactive_lora(
             print("Invalid LoRA model path!")
             return
         settings.lora.enabled = True
-        load_lora_weight(context.lcm_text_to_image.pipeline, settings)
+        try:
+            with pipeline_lock:
+                load_lora_weight(context.lcm_text_to_image.pipeline, settings)
+        except Exception:
+            pass
 
     if menu_flag:
         global _edit_lora_settings

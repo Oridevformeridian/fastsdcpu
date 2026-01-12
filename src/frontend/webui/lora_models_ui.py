@@ -8,6 +8,7 @@ from backend.lora import (
     update_lora_weights,
     load_lora_weight,
 )
+from backend.pipeline_lock import pipeline_lock
 from state import get_settings, get_context
 from frontend.utils import get_valid_lora_model
 from models.interface_types import InterfaceType
@@ -33,8 +34,9 @@ def on_click_update_weight(*lora_weights):
         if pipeline and settings.lora and settings.lora.enabled and settings.lora.path:
             try:
                 from backend.lora import load_lora_weight
-
-                load_lora_weight(pipeline, settings)
+                # Hold pipeline lock while attempting to load saved LoRA
+                with pipeline_lock:
+                    load_lora_weight(pipeline, settings)
                 active_weights = get_active_lora_weights()
             except Exception:
                 pass
@@ -48,11 +50,16 @@ def on_click_update_weight(*lora_weights):
             )
         )
     if len(update_weights) > 0:
-        update_lora_weights(
-            get_context(InterfaceType.WEBUI).lcm_text_to_image.pipeline,
-            app_settings.settings.lcm_diffusion_setting,
-            update_weights,
-        )
+        # Serialize pipeline adapter updates
+        try:
+            with pipeline_lock:
+                update_lora_weights(
+                    get_context(InterfaceType.WEBUI).lcm_text_to_image.pipeline,
+                    app_settings.settings.lcm_diffusion_setting,
+                    update_weights,
+                )
+        except Exception:
+            pass
     # return status update
     return [gr.Markdown.update(value=f"**LoRA enabled:** {len(get_active_lora_weights())>0}")]
 
@@ -89,8 +96,8 @@ def on_click_load_lora(lora_name, lora_weight):
         if pipeline:
             try:
                 from backend.lora import remove_loaded_lora
-
-                remove_loaded_lora(pipeline, settings)
+                with pipeline_lock:
+                    remove_loaded_lora(pipeline, settings)
                 # return empty updates + status
                 return _empty_outputs_with_status("**LoRA enabled:** False")
             except Exception:

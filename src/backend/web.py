@@ -13,6 +13,7 @@ from backend.models.device import DeviceInfo
 from backend.models.lcmdiffusion_setting import DiffusionTask, LCMDiffusionSetting
 from constants import APP_VERSION, DEVICE
 from context import Context
+from backend.pipeline_lock import pipeline_lock
 from models.interface_types import InterfaceType
 from state import get_settings
 from paths import FastStableDiffusionPaths
@@ -564,7 +565,27 @@ def _queue_worker_loop(poll_interval: float = 1.0):
                 except Exception:
                     pass
 
-            images = context.generate_text_to_image(app_settings.settings)
+            # Ensure pipeline mutations and generation are serialized.
+            with pipeline_lock:
+                # Apply any requested LoRA into the live pipeline before generation
+                try:
+                    lora_cfg = diffusion_config.lora
+                    if lora_cfg and getattr(lora_cfg, "enabled", False) and lora_cfg.path:
+                        try:
+                            from backend.lora import load_lora_weight, get_active_lora_weights
+                            from pathlib import Path
+
+                            if context.lcm_text_to_image.pipeline:
+                                adapter_name = Path(str(lora_cfg.path)).stem
+                                active = get_active_lora_weights()
+                                if not any(a[0] == adapter_name for a in active):
+                                    load_lora_weight(context.lcm_text_to_image.pipeline, diffusion_config)
+                        except Exception as _ex:
+                            print(f"Failed to apply saved LoRA before job start: {_ex}")
+                except Exception:
+                    pass
+
+                images = context.generate_text_to_image(app_settings.settings)
             
             # Check if job was cancelled during generation (before saving)
             current_job = get_job(db_file, job_id)

@@ -21,6 +21,7 @@ from backend.lora import (
     update_lora_weights,
     load_lora_weight,
 )
+from backend.pipeline_lock import pipeline_lock
 from frontend.gui.common_widgets import LabeledSlider
 from app_settings import AppSettings
 from paths import FastStableDiffusionPaths
@@ -156,8 +157,8 @@ class LoraModelsWidget(QWidget):
             if self.parent.context.lcm_text_to_image.pipeline:
                 try:
                     from backend.lora import remove_loaded_lora
-
-                    remove_loaded_lora(self.parent.context.lcm_text_to_image.pipeline, settings)
+                    with pipeline_lock:
+                        remove_loaded_lora(self.parent.context.lcm_text_to_image.pipeline, settings)
                     QMessageBox.information(self.parent, "Info", "Unloaded LoRA(s) from current pipeline.")
                 except Exception:
                     QMessageBox.information(
@@ -195,10 +196,14 @@ class LoraModelsWidget(QWidget):
             )
             return
         settings.lora.enabled = True
-        load_lora_weight(
-            self.parent.context.lcm_text_to_image.pipeline,
-            settings,
-        )
+        try:
+            with pipeline_lock:
+                load_lora_weight(
+                    self.parent.context.lcm_text_to_image.pipeline,
+                    settings,
+                )
+        except Exception:
+            pass
         lora_widget = _LoraWidget()
         lora_widget.setValues(current_lora, current_weight)
         self.layout().insertWidget(3, lora_widget)
@@ -220,11 +225,15 @@ class LoraModelsWidget(QWidget):
                 )
             )
         if len(update_weights) > 0:
-            update_lora_weights(
-                self.parent.context.lcm_text_to_image.pipeline,
-                self.config.settings.lcm_diffusion_setting,
-                update_weights,
-            )
+            try:
+                with pipeline_lock:
+                    update_lora_weights(
+                        self.parent.context.lcm_text_to_image.pipeline,
+                        self.config.settings.lcm_diffusion_setting,
+                        update_weights,
+                    )
+            except Exception:
+                pass
 
     def reset_active_lora_widgets(self):
         # This code assumes that the only time when the active LoRA weights count
