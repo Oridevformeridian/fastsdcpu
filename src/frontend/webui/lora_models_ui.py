@@ -262,12 +262,16 @@ def get_lora_models_ui() -> None:
         ],
     )
 
-    def _on_upload_lora(files, set_default):
+    def _on_upload_lora(*args):
         """Save uploaded safetensors into the LoRA models directory and refresh list.
 
-        If `set_default` is True, also set the first uploaded file as the
-        default LoRA and enable it in settings.
+        Signature tolerant wrapper: accepts either `(files)` or `(files, set_default)`.
+        If `set_default` is True, also set the first uploaded file as the default
+        LoRA and enable it in settings.
         """
+        # Accept both call signatures for robustness
+        files = args[0] if len(args) > 0 else None
+        set_default = args[1] if len(args) > 1 else False
         if not files:
             return gr.Dropdown.update(), gr.Markdown.update(value="No files uploaded")
         dest_dir = app_settings.settings.lcm_diffusion_setting.lora.models_dir
