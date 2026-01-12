@@ -268,6 +268,44 @@ async def list_results():
         full = os.path.join(path, entry)
         stat = os.stat(full)
         file_review = reviews.get(entry)
+        # Attempt to load accompanying JSON metadata (uuid.json)
+        meta = {}
+        try:
+            base_name = os.path.splitext(entry)[0]
+            import re
+
+            uuid_match = re.match(r'^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', base_name)
+            if uuid_match:
+                uuid = uuid_match.group(1)
+                json_path = os.path.join(path, uuid + ".json")
+                if os.path.exists(json_path):
+                    try:
+                        with open(json_path, "r", encoding="utf-8") as f:
+                            meta = json.load(f)
+                    except Exception:
+                        meta = {}
+        except Exception:
+            meta = {}
+
+        # Build a human-friendly model string into meta['model'] for UI
+        try:
+            model_str = ""
+            if meta:
+                # LCM + LoRA case
+                if meta.get("use_lcm_lora") and meta.get("lcm_lora"):
+                    l = meta.get("lcm_lora", {})
+                    model_str = f"{l.get('lcm_lora_id','')}+ {l.get('base_model_id','')}".strip()
+                elif meta.get("use_gguf_model"):
+                    gg = meta.get("gguf_model", {}).get("diffusion_path", "")
+                    model_str = os.path.basename(gg) if gg else ""
+                elif meta.get("use_openvino"):
+                    model_str = meta.get("openvino_lcm_model_id") or meta.get("lcm_model_id", "")
+                else:
+                    model_str = meta.get("lcm_model_id", "") or meta.get("openvino_lcm_model_id", "")
+            meta["model"] = model_str
+        except Exception:
+            pass
+
         files.append(
             {
                 "name": entry,
@@ -275,6 +313,7 @@ async def list_results():
                 "size": stat.st_size,
                 "mtime": stat.st_mtime,
                 "review": file_review,
+                "meta": meta,
             }
         )
 
@@ -373,6 +412,24 @@ async def list_results_paged(page: int = 0, size: int = 20):
                         meta = json.load(f)
                 except Exception:
                     pass
+
+        # Populate a friendly model string into meta['model'] for UI
+        try:
+            model_str = ""
+            if meta:
+                if meta.get("use_lcm_lora") and meta.get("lcm_lora"):
+                    l = meta.get("lcm_lora", {})
+                    model_str = f"{l.get('lcm_lora_id','')}+ {l.get('base_model_id','')}".strip()
+                elif meta.get("use_gguf_model"):
+                    gg = meta.get("gguf_model", {}).get("diffusion_path", "")
+                    model_str = os.path.basename(gg) if gg else ""
+                elif meta.get("use_openvino"):
+                    model_str = meta.get("openvino_lcm_model_id") or meta.get("lcm_model_id", "")
+                else:
+                    model_str = meta.get("lcm_model_id", "") or meta.get("openvino_lcm_model_id", "")
+            meta["model"] = model_str
+        except Exception:
+            pass
 
         results.append(
             {
