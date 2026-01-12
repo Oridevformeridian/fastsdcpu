@@ -230,7 +230,8 @@ def get_results_review_ui():
 
                 use_img2img_btn.click(fn=_use_img2img, inputs=[path_state], outputs=[status_area])
                 use_var_btn.click(fn=_use_variations, inputs=[path_state], outputs=[status_area])
-                show_json_btn.click(fn=_show_json, inputs=[path_state], outputs=[status_area])
+                # Pass the filename textbox to _show_json (robust when path state is empty)
+                show_json_btn.click(fn=_show_json, inputs=[name_tb], outputs=[status_area])
                 regen_btn.click(fn=_regenerate, inputs=[path_state], outputs=[status_area])
                 def _archive(path):
                     if not path:
