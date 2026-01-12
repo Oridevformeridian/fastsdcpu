@@ -88,6 +88,10 @@ app = FastAPI(
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
 )
+# Ensure results listing cache is clean on process start
+# This prevents a restarted server from serving stale or missing entries
+# until the directory mtime is observed and the cache is repopulated.
+app._results_cache = {"dir_mtime": 0, "timestamp": 0.0, "ttl": 3.0, "pages": {}}
 print(app_settings.settings.lcm_diffusion_setting)
 origins = ["*"]
 app.add_middleware(
