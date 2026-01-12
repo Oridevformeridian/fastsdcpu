@@ -1,4 +1,6 @@
 import json
+import time
+import os
 from os import path, mkdir
 from typing import Any
 from uuid import uuid4
@@ -173,7 +175,6 @@ class ImageSaver:
                     os.fsync(json_file.fileno())
                 # Additional sync to ensure directory metadata is updated
                 try:
-                    import os
                     dir_fd = os.open(out_path, os.O_RDONLY)
                     os.fsync(dir_fd)
                     os.close(dir_fd)
