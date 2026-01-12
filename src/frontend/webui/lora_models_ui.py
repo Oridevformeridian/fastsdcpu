@@ -201,7 +201,14 @@ def get_lora_models_ui() -> None:
                         label="Upload LoRA (.safetensors)",
                         interactive=True,
                     )
+                    # Option to mark uploaded model as the default immediately
+                    upload_set_default = gr.Checkbox(
+                        label="Set uploaded as Default",
+                        value=False,
+                        interactive=True,
+                    )
                     upload_btn = gr.Button("Upload LoRA(s)")
+                    # Keep default action separate to reduce UI clutter
                     set_default_btn = gr.Button("Set selected as Default")
 
                 with gr.Row():
@@ -251,8 +258,12 @@ def get_lora_models_ui() -> None:
         ],
     )
 
-    def _on_upload_lora(files):
-        """Save uploaded safetensors into the LoRA models directory and refresh list."""
+    def _on_upload_lora(files, set_default):
+        """Save uploaded safetensors into the LoRA models directory and refresh list.
+
+        If `set_default` is True, also set the first uploaded file as the
+        default LoRA and enable it in settings.
+        """
         if not files:
             return gr.Dropdown.update(), gr.Markdown.update(value="No files uploaded")
         dest_dir = app_settings.settings.lcm_diffusion_setting.lora.models_dir
@@ -299,31 +310,49 @@ def get_lora_models_ui() -> None:
                     dest_dir,
                 )
                 sel = valid_model if valid_model != "" else "None"
-            return gr.Dropdown.update(choices=lora_choices, value=sel), gr.Markdown.update(value=f"Uploaded: {saved}")
+
+            status = f"Uploaded: {saved}"
+            # If requested, set the uploaded model as default and enable it
+            if set_default and sel and sel in lora_models_map:
+                try:
+                    app_settings.settings.lcm_diffusion_setting.lora.path = lora_models_map[sel]
+                    app_settings.settings.lcm_diffusion_setting.lora.enabled = True
+                    try:
+                        get_settings().save()
+                    except Exception:
+                        pass
+                    status += f"; Default set to: {sel} (enabled)"
+                except Exception as ex:
+                    status += f"; Failed to set default: {ex}"
+
+            return gr.Dropdown.update(choices=lora_choices, value=sel), gr.Markdown.update(value=status)
         except Exception as ex:
             return gr.Dropdown.update(), gr.Markdown.update(value=f"Upload failed: {ex}")
 
     def _on_set_default(model_name):
+        # Set the selected model as default and enable it for future runs.
         if not model_name or model_name == "None":
             app_settings.settings.lcm_diffusion_setting.lora.path = ""
+            app_settings.settings.lcm_diffusion_setting.lora.enabled = False
             try:
                 get_settings().save()
             except Exception:
                 pass
-            return gr.Markdown.update(value="Default LoRA cleared")
+            return gr.Markdown.update(value="Default LoRA cleared (LoRA disabled)")
         lora_models_map = get_lora_models(app_settings.settings.lcm_diffusion_setting.lora.models_dir)
         if model_name not in lora_models_map:
             return gr.Markdown.update(value="Model not found to set as default")
         app_settings.settings.lcm_diffusion_setting.lora.path = lora_models_map[model_name]
+        app_settings.settings.lcm_diffusion_setting.lora.enabled = True
         try:
             get_settings().save()
         except Exception:
             pass
-        return gr.Markdown.update(value=f"Default LoRA set to: {model_name}")
+        return gr.Markdown.update(value=f"Default LoRA set to: {model_name} (enabled)")
 
     upload_btn.click(
         fn=_on_upload_lora,
-        inputs=[upload_files],
+        inputs=[upload_files, upload_set_default],
         outputs=[lora_model, lora_status],
     )
 
