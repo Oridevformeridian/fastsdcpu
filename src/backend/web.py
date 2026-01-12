@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import urllib.parse
+import hashlib
 
 from backend.api.models.response import StableDiffusionResponse
 from backend.base64_image import base64_image_to_pil, pil_image_to_base64_str
@@ -144,7 +145,16 @@ async def serve_result(file_path: str, request: Request):
         except Exception as e:
             print(f"[RESULTS] failed reading prefix: {e}")
 
-        headers = {"X-Result-Size": str(stat.st_size)}
+        # Add cache-control and ETag headers so clients revalidate and
+        # do not indefinitely serve a previously cached 0-byte response.
+        etag_source = f"{stat.st_mtime}-{stat.st_size}-{full}"
+        etag = hashlib.sha1(etag_source.encode("utf-8")).hexdigest()
+        headers = {
+            "X-Result-Size": str(stat.st_size),
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "ETag": f'"{etag}"',
+        }
         return FileResponse(full, headers=headers)
     except Exception as e:
         print(f"[RESULTS] error serving {full}: {e}")
@@ -265,6 +275,27 @@ async def list_results():
         )
 
     return files
+
+
+@app.post(
+    "/api/results/invalidate",
+    description="Invalidate the server-side results listing cache",
+    summary="Invalidate results cache",
+)
+async def invalidate_results_cache():
+    path = app_settings.settings.generated_images.path
+    if not path:
+        path = FastStableDiffusionPaths.get_results_path()
+
+    # Clear in-memory cache used by /api/results/paged (if present)
+    if hasattr(app, "_results_cache"):
+        try:
+            app._results_cache["pages"].clear()
+            app._results_cache["dir_mtime"] = 0
+        except Exception:
+            pass
+
+    return {"invalidated": True}
 
 
 
