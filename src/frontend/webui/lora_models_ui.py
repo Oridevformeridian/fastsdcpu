@@ -184,18 +184,22 @@ def get_lora_models_ui() -> None:
                         label="Initial Lora weight",
                         interactive=True,
                     )
+
                     # Status indicator showing whether saved LoRA is enabled
                     lora_status = gr.Markdown(
                         f"**LoRA enabled:** {app_settings.settings.lcm_diffusion_setting.lora.enabled}",
                         elem_id="lora_status",
                     )
+
+                    # Place the Load button on its own row to improve layout
                     load_lora_btn = gr.Button(
                         "Load selected LoRA",
                         elem_id="load_lora_button",
                         scale=0,
                     )
 
-                    # Upload and default controls
+                # New row for upload/default controls to avoid crowding the Load button
+                with gr.Row():
                     upload_files = gr.File(
                         file_count="multiple",
                         label="Upload LoRA (.safetensors)",
