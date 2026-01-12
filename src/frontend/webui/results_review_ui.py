@@ -79,8 +79,13 @@ def get_results_review_ui():
     PAGE_SIZE = 6
 
     with gr.Blocks(css="""
+        /* Desktop: show taller gallery (2.25x) and keep full width */
         @media (min-width: 768px) {
-            #results-gallery-desktop-hide { display: none !important; }
+            #results-gallery-desktop-hide { display: block !important; height: 540px !important; }
+        }
+        /* Mobile: keep the original, smaller gallery height */
+        @media (max-width: 767px) {
+            #results-gallery-desktop-hide { display: block !important; height: 240px !important; }
         }
         .download-image-btn { cursor: pointer; }
     """) as results_block:
