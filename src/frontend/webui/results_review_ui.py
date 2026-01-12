@@ -98,7 +98,7 @@ def get_results_review_ui():
             show_failed = gr.Checkbox(label="Show Failed Images", value=True)
             
         # Preview gallery at top (hidden on desktop)
-        files_gallery = gr.Gallery(label="Generated results", columns=3, height=240, elem_id="results-gallery-desktop-hide")
+        files_gallery = gr.Gallery(label="Generated results", columns=3, height=540, elem_id="results-gallery-desktop-hide")
         
         status_area = gr.Markdown("")
         page_state = gr.State(value=0)
