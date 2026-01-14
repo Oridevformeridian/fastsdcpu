@@ -86,18 +86,23 @@ class ImageSaver:
                     while attempts < max_attempts and not saved_ok:
                         attempts += 1
                         try:
-                            # When possible, pass format to save to avoid ambiguity
+                            # When possible, pass format to save to avoid ambiguity (temp file has .tmp)
                             save_kwargs = {}
-                            try:
-                                # prefer using extension-derived format if available
-                                fmt = format
-                                if fmt:
-                                    save_kwargs["format"] = fmt
-                            except Exception:
-                                pass
-                            # JPEG quality only when appropriate
-                            if str(image_extension).lower() in (".jpg", ".jpeg"):
+                            ext = str(image_extension).lower() if image_extension else ""
+                            if ext in (".png", ".png"):
+                                save_kwargs["format"] = "PNG"
+                            elif ext in (".jpg", ".jpeg"):
+                                save_kwargs["format"] = "JPEG"
                                 save_kwargs.setdefault("quality", jpeg_quality)
+                            elif ext in (".gif",):
+                                save_kwargs["format"] = "GIF"
+                            else:
+                                # fallback to the provided format string if present
+                                try:
+                                    if format:
+                                        save_kwargs["format"] = format
+                                except Exception:
+                                    pass
 
                             image.save(temp_path, **save_kwargs)
                         except Exception as e:
