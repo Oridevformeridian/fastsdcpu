@@ -306,6 +306,18 @@ def get_results_review_ui():
                     from paths import FastStableDiffusionPaths
                     results_path = FastStableDiffusionPaths.get_results_path()
 
+                # Ensure a placeholder image exists for missing files (so cards aren't blank)
+                placeholder_path = os.path.join(results_path, ".missing.png")
+                try:
+                    if not os.path.exists(placeholder_path):
+                        # create a simple gray placeholder
+                        ph = Image.new("RGB", (512, 512), color=(180, 180, 180))
+                        ph.save(placeholder_path, format="PNG")
+                        ph.close()
+                except Exception:
+                    if DEBUG_ENABLED:
+                        print("[DEBUG-UI] failed to create placeholder image")
+
                 page_paths = []
                 total_results = payload.get("total", 0)
                 page_text = f"Page {page_index + 1} of {max(1, (total_results + PAGE_SIZE - 1) // PAGE_SIZE)}"
@@ -353,8 +365,11 @@ def get_results_review_ui():
                         model_val = item.get("meta", {}).get("model", "") or item.get("meta", {}).get("openvino_model", "")
                         if DEBUG_ENABLED:
                             print(f"[DEBUG-UI]   prompt={prompt_val[:50] if prompt_val else 'EMPTY'}, model={model_val}")
+                        # For the gallery, only include real files. For the per-slot image display,
+                        # show a placeholder when the real file is missing to avoid blank cards.
+                        display_image = image_url if file_exists else placeholder_path
                         page_paths.append(image_url if file_exists else None)
-                        out.extend([image_url if file_exists else None, name, mtime, prompt_val, model_val, local_path])
+                        out.extend([display_image, name if file_exists else f"{name} (missing)", mtime, prompt_val, model_val, local_path if file_exists else ""])
                     else:
                         out.extend([None, "", "", "", "", ""]) 
 
