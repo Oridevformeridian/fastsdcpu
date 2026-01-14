@@ -86,9 +86,22 @@ class ImageSaver:
                     while attempts < max_attempts and not saved_ok:
                         attempts += 1
                         try:
-                            image.save(temp_path, quality=jpeg_quality)
+                            # When possible, pass format to save to avoid ambiguity
+                            save_kwargs = {}
+                            try:
+                                # prefer using extension-derived format if available
+                                fmt = format
+                                if fmt:
+                                    save_kwargs["format"] = fmt
+                            except Exception:
+                                pass
+                            # JPEG quality only when appropriate
+                            if str(image_extension).lower() in (".jpg", ".jpeg"):
+                                save_kwargs.setdefault("quality", jpeg_quality)
+
+                            image.save(temp_path, **save_kwargs)
                         except Exception as e:
-                            print(f"[ImageSaver] save attempt {attempts} failed: {e}")
+                            logger.exception("[ImageSaver] save attempt %d failed for %s: %s", attempts, image_file_name, e)
                             try:
                                 if os.path.exists(temp_path):
                                     os.remove(temp_path)
@@ -115,9 +128,15 @@ class ImageSaver:
                                 with open(temp_path, "rb") as hf:
                                     prefix = hf.read(8)
                                 # PNG signature or JPEG SOI
-                                if prefix.startswith(b"\x89PNG\r\n\x1a\n") or prefix.startswith(b"\xff\xd8"):
+                                if prefix.startswith(b"\x89PNG\r\n\x1a\n") or prefix.startswith(b"\xff\xd8") or prefix.startswith(b"GIF89a") or prefix.startswith(b"GIF87a"):
                                     saved_ok = True
                                     break
+                                else:
+                                    logger.debug("[ImageSaver] temp file %s header mismatch: %r", temp_path, prefix)
+                            else:
+                                logger.debug("[ImageSaver] temp file %s too small: %d bytes", temp_path, stat_tmp.st_size)
+                        except Exception:
+                            logger.exception("[ImageSaver] error validating temp file %s", temp_path)
                         except Exception:
                             pass
 
@@ -130,7 +149,13 @@ class ImageSaver:
                         time.sleep(0.1)
 
                     if not saved_ok:
-                        logger.error("failed to produce valid temp file for %s after %d attempts", image_file_name, max_attempts)
+                        # Log some filesystem diagnostics
+                        try:
+                            statv = os.statvfs(out_path)
+                            free_bytes = statv.f_bavail * statv.f_frsize
+                        except Exception:
+                            free_bytes = None
+                        logger.error("failed to produce valid temp file for %s after %d attempts; free_bytes=%s", image_file_name, max_attempts, free_bytes)
 
                     # Atomically move temp into final path if present (only if validated)
                     try:
