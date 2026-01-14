@@ -270,85 +270,107 @@ def get_results_review_ui():
             next_btn_bottom = gr.Button("→", scale=0, min_width=50)
 
         def _populate_page(page_index: int, show_failed_filter: bool):
-            payload = _api_get("/api/results/paged", {"page": page_index, "size": PAGE_SIZE})
-            if not payload:
-                # fallback to local listing
-                paths = _list_results_paths()
-                total = len(paths)
-                start = page_index * PAGE_SIZE
-                page_paths = paths[start : start + PAGE_SIZE]
-                # build out_values using minimal info
-                page_text = f"Page {page_index + 1} of {max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)}"
-                out = [page_paths, page_index, page_text, page_text]
+            try:
+                try:
+                    payload = _api_get("/api/results/paged", {"page": page_index, "size": PAGE_SIZE})
+                except Exception:
+                    payload = None
+                    if DEBUG_ENABLED:
+                        import traceback
+                        print("[DEBUG-UI] exception calling _api_get:")
+                        traceback.print_exc()
+
+                if not payload:
+                    # fallback to local listing
+                    paths = _list_results_paths()
+                    total = len(paths)
+                    start = page_index * PAGE_SIZE
+                    page_paths = paths[start : start + PAGE_SIZE]
+                    # build out_values using minimal info
+                    page_text = f"Page {page_index + 1} of {max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)}"
+                    out = [page_paths, page_index, page_text, page_text]
+                    for i in range(PAGE_SIZE):
+                        if i < len(page_paths):
+                            p = page_paths[i]
+                            name = os.path.basename(p)
+                            stat = os.stat(p)
+                            m = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime))
+                            out.extend([p, name, m, "", "", p])
+                        else:
+                            out.extend([None, "", "", "", "", ""])
+                    return tuple(out)
+
+                # Get local file paths instead of URLs for gallery (Gradio doesn't like 127.0.0.1 URLs)
+                results_path = app_settings.settings.generated_images.path
+                if not results_path:
+                    from paths import FastStableDiffusionPaths
+                    results_path = FastStableDiffusionPaths.get_results_path()
+
+                page_paths = []
+                total_results = payload.get("total", 0)
+                page_text = f"Page {page_index + 1} of {max(1, (total_results + PAGE_SIZE - 1) // PAGE_SIZE)}"
+                out = [page_index, page_text, page_text]
                 for i in range(PAGE_SIZE):
-                    if i < len(page_paths):
-                        p = page_paths[i]
-                        name = os.path.basename(p)
-                        stat = os.stat(p)
-                        m = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime))
-                        out.extend([p, name, m, "", "", p])
-                    else:
-                        out.extend([None, "", "", "", "", ""])
-                return tuple(out)
-
-            # Get local file paths instead of URLs for gallery (Gradio doesn't like 127.0.0.1 URLs)
-            results_path = app_settings.settings.generated_images.path
-            if not results_path:
-                from paths import FastStableDiffusionPaths
-                results_path = FastStableDiffusionPaths.get_results_path()
-
-            page_paths = []
-            total_results = payload.get("total", 0)
-            page_text = f"Page {page_index + 1} of {max(1, (total_results + PAGE_SIZE - 1) // PAGE_SIZE)}"
-            out = [page_index, page_text, page_text]
-            for i in range(PAGE_SIZE):
-                if i < len(payload.get("results", [])):
-                    item = payload["results"][i]
-                    name = item.get("name")
-                    # Prefer cache-busted HTTP URL to force browser reloads
-                    local_path = os.path.join(results_path, name)
-                    file_exists = False
-                    image_url = None
-                    try:
-                        if os.path.exists(local_path):
-                            st = os.stat(local_path)
-                            if st.st_size > 16:
-                                # quick header check
-                                try:
-                                    with open(local_path, "rb") as fh:
-                                        prefix = fh.read(8)
-                                    if prefix.startswith(b"\x89PNG\r\n\x1a\n") or prefix.startswith(b"\xff\xd8"):
-                                        file_exists = True
-                                        image_url = local_path
-                                    else:
-                                        if DEBUG_ENABLED:
-                                            print(f"[DEBUG-UI] skipping result with bad header: {local_path}")
-                                except Exception:
-                                    if DEBUG_ENABLED:
-                                        print(f"[DEBUG-UI] couldn't read header for: {local_path}")
-                            else:
-                                if DEBUG_ENABLED:
-                                    print(f"[DEBUG-UI] skipping result too small: {local_path} ({st.st_size} bytes)")
-                    except Exception:
+                    if i < len(payload.get("results", [])):
+                        item = payload["results"][i]
+                        name = item.get("name")
+                        # Prefer cache-busted HTTP URL to force browser reloads
+                        local_path = os.path.join(results_path, name)
                         file_exists = False
-                    if DEBUG_ENABLED:
-                        print(f"[DEBUG-UI] Image {i}: name={name}, path={local_path}, exists={file_exists}")
-                    
-                    # Filter out missing files if show_failed is False
-                    if not show_failed_filter and not file_exists:
-                        out.extend([None, "", "", "", "", ""])
-                        continue
-                    
-                    mtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(item.get("mtime", 0)))
-                    prompt_val = item.get("meta", {}).get("prompt", "")
-                    model_val = item.get("meta", {}).get("model", "") or item.get("meta", {}).get("openvino_model", "")
-                    if DEBUG_ENABLED:
-                        print(f"[DEBUG-UI]   prompt={prompt_val[:50] if prompt_val else 'EMPTY'}, model={model_val}")
-                    page_paths.append(image_url if file_exists else None)
-                    out.extend([image_url if file_exists else None, name, mtime, prompt_val, model_val, local_path])
-                else:
-                    out.extend([None, "", "", "", "", ""]) 
-            return tuple([page_paths] + out)
+                        image_url = None
+                        try:
+                            if os.path.exists(local_path):
+                                st = os.stat(local_path)
+                                if st.st_size > 16:
+                                    # quick header check
+                                    try:
+                                        with open(local_path, "rb") as fh:
+                                            prefix = fh.read(8)
+                                        if prefix.startswith(b"\x89PNG\r\n\x1a\n") or prefix.startswith(b"\xff\xd8"):
+                                            file_exists = True
+                                            image_url = local_path
+                                        else:
+                                            if DEBUG_ENABLED:
+                                                print(f"[DEBUG-UI] skipping result with bad header: {local_path}")
+                                    except Exception:
+                                        if DEBUG_ENABLED:
+                                            print(f"[DEBUG-UI] couldn't read header for: {local_path}")
+                                else:
+                                    if DEBUG_ENABLED:
+                                        print(f"[DEBUG-UI] skipping result too small: {local_path} ({st.st_size} bytes)")
+                        except Exception:
+                            file_exists = False
+                        if DEBUG_ENABLED:
+                            print(f"[DEBUG-UI] Image {i}: name={name}, path={local_path}, exists={file_exists}")
+                        
+                        # Filter out missing files if show_failed is False
+                        if not show_failed_filter and not file_exists:
+                            out.extend([None, "", "", "", "", ""])
+                            continue
+                        
+                        mtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(item.get("mtime", 0)))
+                        prompt_val = item.get("meta", {}).get("prompt", "")
+                        model_val = item.get("meta", {}).get("model", "") or item.get("meta", {}).get("openvino_model", "")
+                        if DEBUG_ENABLED:
+                            print(f"[DEBUG-UI]   prompt={prompt_val[:50] if prompt_val else 'EMPTY'}, model={model_val}")
+                        page_paths.append(image_url if file_exists else None)
+                        out.extend([image_url if file_exists else None, name, mtime, prompt_val, model_val, local_path])
+                    else:
+                        out.extend([None, "", "", "", "", ""]) 
+                return tuple([page_paths] + out)
+            except Exception as e:
+                # Catch-all to prevent Gradio from showing "Error" in the UI.
+                if DEBUG_ENABLED:
+                    import traceback
+                    print("[DEBUG-UI] exception in _populate_page:")
+                    traceback.print_exc()
+                # Build an empty safe response matching the expected outputs
+                page_paths = []
+                page_text = f"Page {page_index + 1} of 1"
+                safe = [page_paths, page_index, page_text, page_text]
+                for _ in range(PAGE_SIZE):
+                    safe.extend([None, "", "", "", "", ""])
+                return tuple(safe)
 
         def _prev(page_index: int, show_failed_filter: bool):
             new_page = max(0, page_index - 1)
