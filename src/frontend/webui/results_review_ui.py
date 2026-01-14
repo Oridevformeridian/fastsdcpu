@@ -66,10 +66,28 @@ def _list_results_paths():
     if not os.path.exists(path):
         return []
 
+    def _is_valid_image(pth: str) -> bool:
+        try:
+            st = os.stat(pth)
+            if st.st_size <= 16:
+                if DEBUG_ENABLED:
+                    print(f"[DEBUG-UI] skipping small file: {pth} ({st.st_size} bytes)")
+                return False
+            with open(pth, "rb") as fh:
+                prefix = fh.read(8)
+            if prefix.startswith(b"\x89PNG\r\n\x1a\n") or prefix.startswith(b"\xff\xd8"):
+                return True
+            if DEBUG_ENABLED:
+                print(f"[DEBUG-UI] skipping invalid-header file: {pth}")
+            return False
+        except Exception:
+            return False
+
     entries = [
-        e for e in os.listdir(path) 
+        e for e in os.listdir(path)
         if os.path.isfile(os.path.join(path, e))
         and (e.lower().endswith('.jpg') or e.lower().endswith('.png') or e.lower().endswith('.jpeg'))
+        and _is_valid_image(os.path.join(path, e))
     ]
     entries.sort(key=lambda e: os.stat(os.path.join(path, e)).st_mtime, reverse=True)
     return [os.path.join(path, e) for e in entries]
@@ -289,11 +307,30 @@ def get_results_review_ui():
                     name = item.get("name")
                     # Prefer cache-busted HTTP URL to force browser reloads
                     local_path = os.path.join(results_path, name)
-                    file_exists = os.path.exists(local_path)
+                    file_exists = False
                     image_url = None
-                    if file_exists:
-                        # keep using local file paths for Gradio image component
-                        image_url = local_path
+                    try:
+                        if os.path.exists(local_path):
+                            st = os.stat(local_path)
+                            if st.st_size > 16:
+                                # quick header check
+                                try:
+                                    with open(local_path, "rb") as fh:
+                                        prefix = fh.read(8)
+                                    if prefix.startswith(b"\x89PNG\r\n\x1a\n") or prefix.startswith(b"\xff\xd8"):
+                                        file_exists = True
+                                        image_url = local_path
+                                    else:
+                                        if DEBUG_ENABLED:
+                                            print(f"[DEBUG-UI] skipping result with bad header: {local_path}")
+                                except Exception:
+                                    if DEBUG_ENABLED:
+                                        print(f"[DEBUG-UI] couldn't read header for: {local_path}")
+                            else:
+                                if DEBUG_ENABLED:
+                                    print(f"[DEBUG-UI] skipping result too small: {local_path} ({st.st_size} bytes)")
+                    except Exception:
+                        file_exists = False
                     if DEBUG_ENABLED:
                         print(f"[DEBUG-UI] Image {i}: name={name}, path={local_path}, exists={file_exists}")
                     

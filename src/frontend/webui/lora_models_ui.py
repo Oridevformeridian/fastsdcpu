@@ -2,6 +2,7 @@ import gradio as gr
 from os import path
 import os
 import shutil
+import logging
 from backend.lora import (
     get_lora_models,
     get_active_lora_weights,
@@ -21,6 +22,9 @@ _custom_lora_names = []
 _custom_lora_columns = []
 
 app_settings = get_settings()
+
+# module logger for webui frontend
+logger = logging.getLogger("webui")
 
 
 def on_click_update_weight(*lora_weights):
@@ -283,6 +287,18 @@ def get_lora_models_ui() -> None:
         else:
             files = kwargs.get("files")
             set_default = kwargs.get("set_default", False)
+        # Normalize to a list for easier logging and processing
+        file_list = files if isinstance(files, list) else ([files] if files else [])
+        try:
+            names = []
+            for f in file_list:
+                try:
+                    names.append(getattr(f, "name", f.get("name") if isinstance(f, dict) else str(f)))
+                except Exception:
+                    names.append(str(f))
+        except Exception:
+            names = [str(len(file_list)) + " files"]
+        logger.info("LoRA upload attempt: files=%s set_default=%s", names, set_default)
         if not files:
             return gr.Dropdown.update(), gr.Markdown.update(value="No files uploaded")
         dest_dir = app_settings.settings.lcm_diffusion_setting.lora.models_dir
@@ -290,7 +306,6 @@ def get_lora_models_ui() -> None:
         try:
             os.makedirs(dest_dir, exist_ok=True)
             # files may be a list of temp file dicts or a single file
-            file_list = files if isinstance(files, list) else [files]
             for f in file_list:
                 # Gradio file object can be a dict-like or have .name and .file
                 try:
@@ -325,7 +340,7 @@ def get_lora_models_ui() -> None:
                         pass
                     saved.append(fname)
                 except Exception as ex:
-                    print(f"Failed to save uploaded LoRA {fname}: {ex}")
+                    logger.exception("Failed to save uploaded LoRA %s", fname)
             # rebuild model list
             lora_models_map = get_lora_models(dest_dir)
             lora_choices = ["None"] + list(lora_models_map.keys())
@@ -358,6 +373,7 @@ def get_lora_models_ui() -> None:
 
             return gr.Dropdown.update(choices=lora_choices, value=sel), gr.Markdown.update(value=status)
         except Exception as ex:
+            logger.exception("LoRA upload failed")
             return gr.Dropdown.update(), gr.Markdown.update(value=f"Upload failed: {ex}")
 
     def _on_set_default(model_name):

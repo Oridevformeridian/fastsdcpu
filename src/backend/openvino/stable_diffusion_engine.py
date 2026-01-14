@@ -35,6 +35,7 @@ import concurrent.futures
 #For GIF
 import PIL
 from PIL import Image
+from utils import atomic_save_image
 import glob
 import json
 import time
@@ -345,13 +346,43 @@ class StableDiffusionEngineAdvanced(DiffusionPipeline):
                 image = self.vae_decoder(frames[i]*(1/0.18215))[self._vae_d_output]
                 image = self.postprocess_image(image, meta)
                 output = gif_folder + "/" + str(i).zfill(3) +".png"
-                cv2.imwrite(output, image)
+                temp_output = os.path.join(gif_folder, f".{str(i).zfill(3)}.png.tmp")
+                try:
+                    if os.path.exists(temp_output):
+                        try:
+                            os.remove(temp_output)
+                        except Exception:
+                            pass
+                    cv2.imwrite(temp_output, image)
+                    try:
+                        with open(temp_output, "rb") as tf:
+                            tf.flush()
+                            try:
+                                os.fsync(tf.fileno())
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    os.replace(temp_output, output)
+                except Exception as e:
+                    print(f"failed to write frame {output}: {e}")
+                    try:
+                        if os.path.exists(temp_output):
+                            os.remove(temp_output)
+                    except Exception:
+                        pass
             with open(os.path.join(gif_folder, "prompt.json"), "w") as file:
                 json.dump({"prompt": prompt}, file)
             frames_image =  [Image.open(image) for image in glob.glob(f"{gif_folder}/*.png")]
             frame_one = frames_image[0]
             gif_file=os.path.join(gif_folder,"stable_diffusion.gif")
-            frame_one.save(gif_file, format="GIF", append_images=frames_image, save_all=True, duration=100, loop=0)
+            try:
+                save_kwargs = {"format": "GIF", "append_images": frames_image, "save_all": True, "duration": 100, "loop": 0}
+                ok = atomic_save_image(frame_one, gif_file, save_kwargs=save_kwargs)
+                if not ok:
+                    print(f"Failed to atomically save GIF to {gif_file}")
+            except Exception as e:
+                print(f"Error saving GIF {gif_file}: {e}")
 
         return image
 
@@ -1607,13 +1638,43 @@ class StableDiffusionEngineReferenceOnly(DiffusionPipeline):
                 image = self.vae_decoder(frames[i])[self._vae_d_output]
                 image = self.postprocess_image(image, meta)
                 output = gif_folder + "/" + str(i).zfill(3) +".png"
-                cv2.imwrite(output, image)
+                temp_output = os.path.join(gif_folder, f".{str(i).zfill(3)}.png.tmp")
+                try:
+                    if os.path.exists(temp_output):
+                        try:
+                            os.remove(temp_output)
+                        except Exception:
+                            pass
+                    cv2.imwrite(temp_output, image)
+                    try:
+                        with open(temp_output, "rb") as tf:
+                            tf.flush()
+                            try:
+                                os.fsync(tf.fileno())
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    os.replace(temp_output, output)
+                except Exception as e:
+                    print(f"failed to write frame {output}: {e}")
+                    try:
+                        if os.path.exists(temp_output):
+                            os.remove(temp_output)
+                    except Exception:
+                        pass
             with open(os.path.join(gif_folder, "prompt.json"), "w") as file:
                 json.dump({"prompt": prompt}, file)
             frames_image =  [Image.open(image) for image in glob.glob(f"{gif_folder}/*.png")]  
             frame_one = frames_image[0]
             gif_file=os.path.join(gif_folder,"stable_diffusion.gif")
-            frame_one.save(gif_file, format="GIF", append_images=frames_image, save_all=True, duration=100, loop=0)
+            try:
+                save_kwargs = {"format": "GIF", "append_images": frames_image, "save_all": True, "duration": 100, "loop": 0}
+                ok = atomic_save_image(frame_one, gif_file, save_kwargs=save_kwargs)
+                if not ok:
+                    print(f"Failed to atomically save GIF to {gif_file}")
+            except Exception as e:
+                print(f"Error saving GIF {gif_file}: {e}")
 
         return image
     

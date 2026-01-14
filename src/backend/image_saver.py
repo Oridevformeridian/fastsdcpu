@@ -1,11 +1,14 @@
 import json
 import time
 import os
+import logging
 from os import path, mkdir
 from typing import Any
 from uuid import uuid4
 from backend.models.lcmdiffusion_setting import LCMDiffusionSetting
 from utils import get_image_file_extension
+
+logger = logging.getLogger(__name__)
 
 
 def get_exclude_keys():
@@ -61,7 +64,6 @@ class ImageSaver:
                     mkdir(out_path)
                 image_extension = get_image_file_extension(format)
                 image_file_name = f"{gen_id}-{index+1}{image_extension}"
-                image_ids.append(image_file_name)
                 image_path = path.join(out_path, image_file_name)
                 # Save to a temp file first, fsync the file, then atomically replace
                 # the final filename. This avoids a race where a reader may observe
@@ -128,24 +130,40 @@ class ImageSaver:
                         time.sleep(0.1)
 
                     if not saved_ok:
-                        print(f"[ImageSaver] failed to produce valid temp file for {image_file_name} after {max_attempts} attempts")
+                        logger.error("failed to produce valid temp file for %s after %d attempts", image_file_name, max_attempts)
 
-                    # Atomically move temp into final path if present
+                    # Atomically move temp into final path if present (only if validated)
                     try:
-                        if os.path.exists(temp_path):
+                        if saved_ok and os.path.exists(temp_path):
                             os.replace(temp_path, image_path)
                         else:
-                            # temp missing; best-effort save directly
-                            image.save(image_path, quality=jpeg_quality)
+                            # temp missing or not validated; attempt best-effort direct save
+                            try:
+                                image.save(image_path, quality=jpeg_quality)
+                            except Exception as e:
+                                logger.error("direct save failed for %s: %s", image_file_name, e)
+                                # ensure no invalid file left
+                                try:
+                                    if os.path.exists(image_path):
+                                        os.remove(image_path)
+                                except Exception:
+                                    pass
+                                raise
                     except Exception:
                         # fallback to rename or direct save
                         try:
-                            if os.path.exists(temp_path):
+                            if saved_ok and os.path.exists(temp_path):
                                 os.rename(temp_path, image_path)
                             else:
                                 image.save(image_path, quality=jpeg_quality)
                         except Exception as e:
-                            print(f"[ImageSaver] promotion failed for {image_file_name}: {e}")
+                            logger.error("promotion failed for %s: %s", image_file_name, e)
+                            # ensure no invalid file left
+                            try:
+                                if os.path.exists(image_path):
+                                    os.remove(image_path)
+                            except Exception:
+                                pass
 
                     # Sync directory metadata so new file is visible to readers
                     try:
@@ -154,12 +172,39 @@ class ImageSaver:
                         os.close(dir_fd)
                     except Exception:
                         pass
+                except Exception as e:
+                    logger.exception("unexpected error while saving %s: %s", image_file_name, e)
+
+                # Validate final file exists and looks reasonable before reporting success
+                try:
+                    if os.path.exists(image_path):
+                        stat_final = os.stat(image_path)
+                        if stat_final.st_size > 16:
+                            # basic magic header check
+                            try:
+                                with open(image_path, "rb") as fh:
+                                    prefix = fh.read(8)
+                                if prefix.startswith(b"\x89PNG\r\n\x1a\n") or prefix.startswith(b"\xff\xd8"):
+                                    image_ids.append(image_file_name)
+                                else:
+                                    logger.error("saved file %s has invalid header, removing", image_path)
+                                    try:
+                                        os.remove(image_path)
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                logger.exception("error validating saved file %s", image_path)
+                        else:
+                            logger.error("saved file %s too small (%d bytes), removing", image_path, stat_final.st_size)
+                            try:
+                                os.remove(image_path)
+                            except Exception:
+                                pass
+                    else:
+                        logger.error("final image file missing after save attempts: %s", image_path)
                 except Exception:
-                    # If anything goes wrong, attempt a best-effort save to final path
-                    try:
-                        image.save(image_path, quality=jpeg_quality)
-                    except Exception:
-                        pass
+                    logger.exception("error checking final file %s", image_path)
+
             if lcm_diffusion_setting:
                 data = lcm_diffusion_setting.model_dump(exclude=get_exclude_keys())
                 if image_seeds:

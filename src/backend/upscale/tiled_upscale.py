@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from backend.models.lcmdiffusion_setting import DiffusionTask
 from context import Context
 from constants import DEVICE
+from utils import atomic_save_image
 
 
 def generate_upscaled_image(
@@ -112,7 +113,10 @@ def generate_upscaled_image(
         result_rgb = result.convert("RGB")
         result.close()
         result = result_rgb
-    result.save(output_path)
+
+    ok = atomic_save_image(result, output_path, save_kwargs={"format": upscale_settings["output_format"]})
+    if not ok:
+        logging.error("Failed to atomically save upscaled image to %s", output_path)
     result.close()
     source_image.close()
     return
