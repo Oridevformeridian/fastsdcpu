@@ -357,9 +357,10 @@ def get_results_review_ui():
                         out.extend([image_url if file_exists else None, name, mtime, prompt_val, model_val, local_path])
                     else:
                         out.extend([None, "", "", "", "", ""]) 
-                    # Gradio Gallery cannot accept None entries; filter them for the gallery view
-                    gallery_paths = [p for p in page_paths if p]
-                    return tuple([gallery_paths] + out)
+
+                # Gradio Gallery cannot accept None entries; filter them for the gallery view
+                gallery_paths = [p for p in page_paths if p]
+                return tuple([gallery_paths] + out)
             except Exception as e:
                 # Catch-all to prevent Gradio from showing "Error" in the UI.
                 if DEBUG_ENABLED:
